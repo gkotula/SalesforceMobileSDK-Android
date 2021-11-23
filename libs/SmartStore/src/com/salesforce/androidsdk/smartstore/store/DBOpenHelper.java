@@ -196,6 +196,11 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		SQLiteDatabase.loadLibs(context);
 	}
 
+//	@Override
+//	public void onConfigure(final SQLiteDatabase db) {
+//		db.enableWriteAheadLogging();
+//	}
+
 	@Override
 	public void onConfigure(final SQLiteDatabase db) {
 		db.enableWriteAheadLogging();
