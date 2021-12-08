@@ -8,17 +8,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.salesforce.androidsdk.analytics.EventBuilderHelper
 import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager
-import com.salesforce.androidsdk.smartstore.store.DBHelper
-import com.salesforce.androidsdk.smartstore.store.DBOpenHelper
-import com.salesforce.androidsdk.smartstore.store.IndexSpec
-import com.salesforce.androidsdk.smartstore.store.SmartStore
+import com.salesforce.androidsdk.smartstore.store.*
+import org.json.JSONObject
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.lang.IllegalStateException
+import kotlin.random.Random
 
 /**
  * Benchmark, which will execute on an Android device.
@@ -36,9 +35,10 @@ class ExampleBenchmark {
     private lateinit var dbOpenHelper: DBOpenHelper
     private lateinit var dbHelper: DBHelper
 
+    private val stableRandom = Random(STABLE_RANDOM_SEED)
+
     @Before
     fun setup() {
-        Log.d("ExampleBenchmark", "SETUP - BEGIN")
         EventBuilderHelper.enableDisable(false)
 
         targetContext = InstrumentationRegistry.getInstrumentation().targetContext
@@ -56,12 +56,10 @@ class ExampleBenchmark {
         store = SmartStore(dbOpenHelper, "")
 
         createSoups(store)
-        Log.d("ExampleBenchmark", "SETUP - FINISHED")
     }
 
     @After
     fun tearDown() {
-        Log.d("ExampleBenchmark", "TEARDOWN")
         store.dropAllSoups()
         dbOpenHelper.close()
         dbHelper.clearMemoryCache()
@@ -70,15 +68,31 @@ class ExampleBenchmark {
 
     @Test
     fun log() {
-        Log.d("ExampleBenchmark", "LOG TEST")
         benchmarkRule.measureRepeated {
             Log.d("LogBenchmark", "the cost of writing this log method will be measured")
         }
     }
 
     @Test
-    fun ensureSoupCreation() {
-        assertEquals(listOf(SOUP_1_NAME, SOUP_2_NAME, SOUP_3_NAME, SOUP_4_NAME), store.allSoupNames)
+    fun foo() {
+        val startingEntries = (0..2).map { generateSoupEntry(forSoupName = SOUP_1_NAME) }
+        startingEntries.forEach {
+            store.upsert(SOUP_1_NAME, it)
+        }
+
+        benchmarkRule.measureRepeated {
+            Log.d(
+                "ExampleBenchmark",
+                store.query(
+                    QuerySpec.buildAllQuerySpec(
+                        SOUP_1_NAME,
+                        "_soupEntryId",
+                        QuerySpec.Order.ascending,
+                        10
+                    ), 0
+                ).toString()
+            )
+        }
     }
 
     private fun createSoups(store: SmartStore) {
@@ -163,7 +177,39 @@ class ExampleBenchmark {
         store.registerSoup(SOUP_3_NAME, soup3Specs.toTypedArray())
         store.registerSoup(SOUP_4_NAME, soup4Specs.toTypedArray())
     }
+
+    private fun generateSoupEntry(forSoupName: String): JSONObject {
+        val result = JSONObject()
+
+        store.getSoupIndexSpecs(forSoupName).forEach { spec ->
+            when (spec.type!!) {
+                SmartStore.Type.full_text,
+                SmartStore.Type.string -> result.put(
+                    spec.path,
+                    stableRandom.generateString(minLength = 1u, maxLength = 10u)
+                )
+
+                SmartStore.Type.integer -> result.put(spec.path, stableRandom.nextInt())
+                SmartStore.Type.floating -> result.put(spec.path, stableRandom.nextFloat())
+                SmartStore.Type.json1 -> throw IllegalStateException("JSON1 type not supported in this test")
+            }
+        }
+
+        return result
+    }
+
+    private fun Random.generateString(minLength: UInt = 50u, maxLength: UInt = 400u): String {
+        val safeMaxLength = maxLength.coerceIn(0u until Int.MAX_VALUE.toUInt()).toInt()
+        val characterCount = nextInt(from = minLength.toInt(), until = safeMaxLength)
+
+        // https://stackoverflow.com/a/54400933/17313401 , CC BY-SA 4.0
+        return (0 until characterCount)
+            .map { ASCII_ALLOWED.random(this) }
+            .joinToString("")
+    }
 }
+
+private val ASCII_ALLOWED = ' '..'~' // ASCII 0x20..0x126
 
 // seed chosen via random.org (range 1 - 1,000,000), a.k.a. as close to true randomness as possible, but repeatable
 private const val STABLE_RANDOM_SEED = 502965L
