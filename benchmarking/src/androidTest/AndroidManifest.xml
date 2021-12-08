@@ -11,6 +11,7 @@
     -->
     <application
         android:debuggable="false"
+        android:label="@string/app_label"
         tools:ignore="HardcodedDebugMode"
         tools:replace="android:debuggable" />
 </manifest>
