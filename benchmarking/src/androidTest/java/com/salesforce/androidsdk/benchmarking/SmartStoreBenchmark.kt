@@ -1,7 +1,6 @@
 package com.salesforce.androidsdk.benchmarking
 
 import android.content.Context
-import android.util.Log
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,14 +18,8 @@ import java.io.File
 import java.lang.IllegalStateException
 import kotlin.random.Random
 
-/**
- * Benchmark, which will execute on an Android device.
- *
- * The body of [BenchmarkRule.measureRepeated] is measured in a loop, and Studio will
- * output the result. Modify your code to see how it affects performance.
- */
 @RunWith(AndroidJUnit4::class)
-class ExampleBenchmark {
+class SmartStoreBenchmark {
     @get:Rule
     val benchmarkRule = BenchmarkRule()
 
@@ -55,7 +48,7 @@ class ExampleBenchmark {
         dbHelper = DBHelper.getInstance(dbOpenHelper.getWritableDatabase(""))
         store = SmartStore(dbOpenHelper, "")
 
-        createSoups(store)
+        store.createTestSoups()
     }
 
     @After
@@ -67,56 +60,35 @@ class ExampleBenchmark {
     }
 
     @Test
-    fun log() {
+    fun benchmarkUpsertingSoupEntries() {
+        var soup1Entries: List<JSONObject> = emptyList()
+        var soup2Entries: List<JSONObject> = emptyList()
+        var soup3Entries: List<JSONObject> = emptyList()
+        var soup4Entries: List<JSONObject> = emptyList()
+
         benchmarkRule.measureRepeated {
-            Log.d("LogBenchmark", "the cost of writing this log method will be measured")
+            runWithTimingDisabled {
+                soup1Entries = (0 until 50).map { generateSoupEntry(SOUP_1_NAME) }
+                soup2Entries = (0 until 50).map { generateSoupEntry(SOUP_2_NAME) }
+                soup3Entries = (0 until 50).map { generateSoupEntry(SOUP_3_NAME) }
+                soup4Entries = (0 until 50).map { generateSoupEntry(SOUP_4_NAME) }
+            }
+
+            soup1Entries.forEach { store.upsert(SOUP_1_NAME, it) }
+            soup2Entries.forEach { store.upsert(SOUP_2_NAME, it) }
+            soup3Entries.forEach { store.upsert(SOUP_3_NAME, it) }
+            soup4Entries.forEach { store.upsert(SOUP_4_NAME, it) }
+
+            runWithTimingDisabled {
+                store.clearSoup(SOUP_1_NAME)
+                store.clearSoup(SOUP_2_NAME)
+                store.clearSoup(SOUP_3_NAME)
+                store.clearSoup(SOUP_4_NAME)
+            }
         }
     }
 
-    @Test
-    fun foo() {
-        val startingEntries = (0..2).map { generateSoupEntry(forSoupName = SOUP_1_NAME) }
-        startingEntries.forEach {
-            store.upsert(SOUP_1_NAME, it)
-        }
-
-        benchmarkRule.measureRepeated {
-            Log.d(
-                "ExampleBenchmark",
-                store.query(
-                    QuerySpec.buildAllQuerySpec(
-                        SOUP_1_NAME,
-                        "_soupEntryId",
-                        QuerySpec.Order.ascending,
-                        10
-                    ), 0
-                ).toString()
-            )
-        }
-    }
-
-    private fun createSoups(store: SmartStore) {
-//        val stableRandom = Random(STABLE_RANDOM_SEED)
-//        val numSoups = stableRandom.nextInt(from = 100, until = 200)
-//        for (soupNum in 0..numSoups) {
-//            val numIndexes = stableRandom.nextInt(from = 10, until = 20)
-//            val indexSpecs = (0..numIndexes).map {
-//                IndexSpec(
-//                    "path_$it",
-//                    SmartStore.Type.values()[stableRandom.nextInt(from = 0, until = 4)]
-//                )
-//            }.toTypedArray()
-//
-//            store.registerSoup("soup_$soupNum", indexSpecs)
-//        }
-//
-//        val objToUpsert = JSONObject()
-//        store.getSoupIndexSpecs("soup_1").map {
-//            it.toJSON()
-//        }
-//
-//        TODO("This method needs to set things up to provide a way to later support CRUD on these randomly-generated soups.")
-//
+    private fun SmartStore.createTestSoups() {
         val soup1Specs = listOf(
             IndexSpec("string1", SmartStore.Type.string),
             IndexSpec("string2", SmartStore.Type.string),
@@ -167,17 +139,15 @@ class ExampleBenchmark {
             IndexSpec("string6", SmartStore.Type.string)
         )
 
-//        store.clearSoup(SOUP_1_NAME)
-//        store.clearSoup(SOUP_2_NAME)
-//        store.clearSoup(SOUP_3_NAME)
-//        store.clearSoup(SOUP_4_NAME)
-
-        store.registerSoup(SOUP_1_NAME, soup1Specs.toTypedArray())
-        store.registerSoup(SOUP_2_NAME, soup2Specs.toTypedArray())
-        store.registerSoup(SOUP_3_NAME, soup3Specs.toTypedArray())
-        store.registerSoup(SOUP_4_NAME, soup4Specs.toTypedArray())
+        registerSoup(SOUP_1_NAME, soup1Specs.toTypedArray())
+        registerSoup(SOUP_2_NAME, soup2Specs.toTypedArray())
+        registerSoup(SOUP_3_NAME, soup3Specs.toTypedArray())
+        registerSoup(SOUP_4_NAME, soup4Specs.toTypedArray())
     }
 
+    /**
+     * Avoid calling this from multiple threads/execution contexts to preserve stable random generation
+     */
     private fun generateSoupEntry(forSoupName: String): JSONObject {
         val result = JSONObject()
 
@@ -202,71 +172,21 @@ class ExampleBenchmark {
         val safeMaxLength = maxLength.coerceIn(0u until Int.MAX_VALUE.toUInt()).toInt()
         val characterCount = nextInt(from = minLength.toInt(), until = safeMaxLength)
 
-        // https://stackoverflow.com/a/54400933/17313401 , CC BY-SA 4.0
+        // Following from: https://stackoverflow.com/a/54400933/17313401 CC BY-SA 4.0
         return (0 until characterCount)
             .map { ASCII_ALLOWED.random(this) }
             .joinToString("")
     }
+
+    companion object {
+        private val ASCII_ALLOWED = ' '..'~' // ASCII 0x20..0x126
+
+        // seed chosen via random.org (range 1 - 1,000,000), a.k.a. as close to true randomness as possible, but repeatable
+        private const val STABLE_RANDOM_SEED = 502965L
+
+        private const val SOUP_1_NAME = "soup1"
+        private const val SOUP_2_NAME = "soup2"
+        private const val SOUP_3_NAME = "soup3"
+        private const val SOUP_4_NAME = "soup4"
+    }
 }
-
-private val ASCII_ALLOWED = ' '..'~' // ASCII 0x20..0x126
-
-// seed chosen via random.org (range 1 - 1,000,000), a.k.a. as close to true randomness as possible, but repeatable
-private const val STABLE_RANDOM_SEED = 502965L
-private const val SOUP_1_NAME = "soup1"
-
-private data class Soup1Entry(
-    val string1: String,
-    val string2: String,
-    val integer1: Int,
-    val floating1: Double,
-    val string3: String,
-    val fullText1: String,
-    val floating2: Double,
-    val integer2: Int,
-    val fullText2: String,
-    val integer3: Int,
-    val floating3: Double
-)
-
-private const val SOUP_2_NAME = "soup2"
-
-private data class Soup2Entry(
-    val string1: String,
-    val floating1: Double,
-    val fullText1: String,
-    val string2: String,
-    val fullText2: String,
-    val integer1: Int,
-    val floating2: Double,
-    val integer2: Int,
-    val integer3: Int,
-    val string3: String,
-)
-
-private const val SOUP_3_NAME = "soup3"
-
-private data class Soup3Entry(
-    val integer1: Int,
-    val integer2: Int,
-    val floating1: Double,
-    val floating2: Double,
-    val string1: String,
-    val string2: String,
-    val floating3: Double,
-    val floating4: Double
-)
-
-private const val SOUP_4_NAME = "soup4"
-
-private data class Soup4Entry(
-    val integer1: Int,
-    val string1: String,
-    val string2: String,
-    val fullText1: String,
-    val fullText2: String,
-    val string3: String,
-    val string4: String,
-    val string5: String,
-    val string6: String
-)
