@@ -631,7 +631,7 @@ public class DBHelper {
            if (!cursor.moveToFirst()) {
                return null;
            }
-           return SmartStore.getSoupTableName(cursor.getLong(cursor.getColumnIndex(SmartStore.ID_COL)));
+           return SmartStore.Companion.getSoupTableName(cursor.getLong(cursor.getColumnIndex(SmartStore.ID_COL)));
        	}
        	finally {
            safeClose(cursor);

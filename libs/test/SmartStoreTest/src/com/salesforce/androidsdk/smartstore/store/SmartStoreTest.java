@@ -131,17 +131,17 @@ public class SmartStoreTest extends SmartStoreTestCase {
 		JSONObject json = new JSONObject("{'a':'va', 'b':2, 'c':[0,1,2], 'd': {'d1':'vd1', 'd2':'vd2', 'd3':[1,2], 'd4':{'e':5}}}");
 
 		// Null object
-        Assert.assertNull("Should have been null", SmartStore.project(null, "path"));
+        Assert.assertNull("Should have been null", SmartStore.Companion.project(null, "path"));
 		
 		// Root
-		JSONTestHelper.assertSameJSON("Should have returned whole object", json, SmartStore.project(json, null));
-		JSONTestHelper.assertSameJSON("Should have returned whole object", json, SmartStore.project(json, ""));
+		JSONTestHelper.assertSameJSON("Should have returned whole object", json, SmartStore.Companion.project(json, null));
+		JSONTestHelper.assertSameJSON("Should have returned whole object", json, SmartStore.Companion.project(json, ""));
 		
 		// Top-level elements
-        Assert.assertEquals("Wrong value for key a", "va", SmartStore.project(json, "a"));
-        Assert.assertEquals("Wrong value for key b", 2, SmartStore.project(json, "b"));
-		JSONTestHelper.assertSameJSON("Wrong value for key c", new JSONArray("[0,1,2]"), SmartStore.project(json, "c"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d", new JSONObject("{'d1':'vd1','d2':'vd2','d3':[1,2],'d4':{'e':5}}"), (JSONObject) SmartStore.project(json, "d"));
+        Assert.assertEquals("Wrong value for key a", "va", SmartStore.Companion.project(json, "a"));
+        Assert.assertEquals("Wrong value for key b", 2, SmartStore.Companion.project(json, "b"));
+		JSONTestHelper.assertSameJSON("Wrong value for key c", new JSONArray("[0,1,2]"), SmartStore.Companion.project(json, "c"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d", new JSONObject("{'d1':'vd1','d2':'vd2','d3':[1,2],'d4':{'e':5}}"), (JSONObject) SmartStore.Companion.project(json, "d"));
 	}
 
 	/**
@@ -153,11 +153,11 @@ public class SmartStoreTest extends SmartStoreTestCase {
 		JSONObject json = new JSONObject("{'a':'va', 'b':2, 'c':[0,1,2], 'd': {'d1':'vd1', 'd2':'vd2', 'd3':[1,2], 'd4':{'e':5}}}");
 		
 		// Nested elements
-        Assert.assertEquals("Wrong value for key d.d1", "vd1", SmartStore.project(json, "d.d1"));
-        Assert.assertEquals("Wrong value for key d.d2", "vd2", SmartStore.project(json, "d.d2"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d.d3", new JSONArray("[1,2]"), SmartStore.project(json, "d.d3"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d.d4", new JSONObject("{'e':5}"), SmartStore.project(json, "d.d4"));
-        Assert.assertEquals("Wrong value for key d.d4.e", 5, SmartStore.project(json, "d.d4.e"));
+        Assert.assertEquals("Wrong value for key d.d1", "vd1", SmartStore.Companion.project(json, "d.d1"));
+        Assert.assertEquals("Wrong value for key d.d2", "vd2", SmartStore.Companion.project(json, "d.d2"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d.d3", new JSONArray("[1,2]"), SmartStore.Companion.project(json, "d.d3"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d.d4", new JSONObject("{'e':5}"), SmartStore.Companion.project(json, "d.d4"));
+        Assert.assertEquals("Wrong value for key d.d4.e", 5, SmartStore.Companion.project(json, "d.d4.e"));
 	}
 
 	/**
@@ -167,13 +167,13 @@ public class SmartStoreTest extends SmartStoreTestCase {
     @Test
 	public void testProjectThroughArrays() throws JSONException {
 		JSONObject json = new JSONObject("{\"a\":\"a1\", \"b\":2, \"c\":[{\"cc\":\"cc1\"}, {\"cc\":2}, {\"cc\":[1,2,3]}, {}, {\"cc\":{\"cc5\":5}}], \"d\":[{\"dd\":[{\"ddd\":\"ddd11\"},{\"ddd\":\"ddd12\"}]}, {\"dd\":[{\"ddd\":\"ddd21\"}]}, {\"dd\":[{\"ddd\":\"ddd31\"},{\"ddd3\":\"ddd32\"}]}]}");
-		JSONTestHelper.assertSameJSON("Wrong value for key c", new JSONArray("[{\"cc\":\"cc1\"}, {\"cc\":2}, {\"cc\":[1,2,3]}, {}, {\"cc\":{\"cc5\":5}}]"), SmartStore.project(json, "c"));
-		JSONTestHelper.assertSameJSON("Wrong value for key c.cc", new JSONArray("[\"cc1\",2, [1,2,3], {\"cc5\":5}]"), SmartStore.project(json, "c.cc"));
-		JSONTestHelper.assertSameJSON("Wrong value for key c.cc.cc5", new JSONArray("[5]"), SmartStore.project(json, "c.cc.cc5"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d", new JSONArray("[{\"dd\":[{\"ddd\":\"ddd11\"},{\"ddd\":\"ddd12\"}]}, {\"dd\":[{\"ddd\":\"ddd21\"}]}, {\"dd\":[{\"ddd\":\"ddd31\"},{\"ddd3\":\"ddd32\"}]}]"), SmartStore.project(json, "d"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d.dd", new JSONArray("[[{\"ddd\":\"ddd11\"},{\"ddd\":\"ddd12\"}], [{\"ddd\":\"ddd21\"}], [{\"ddd\":\"ddd31\"},{\"ddd3\":\"ddd32\"}]]"), SmartStore.project(json, "d.dd"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d.dd.ddd", new JSONArray("[[\"ddd11\",\"ddd12\"],[\"ddd21\"],[\"ddd31\"]]"), SmartStore.project(json, "d.dd.ddd"));
-		JSONTestHelper.assertSameJSON("Wrong value for key d.dd.ddd3", new JSONArray("[[\"ddd32\"]]"), SmartStore.project(json, "d.dd.ddd3"));
+		JSONTestHelper.assertSameJSON("Wrong value for key c", new JSONArray("[{\"cc\":\"cc1\"}, {\"cc\":2}, {\"cc\":[1,2,3]}, {}, {\"cc\":{\"cc5\":5}}]"), SmartStore.Companion.project(json, "c"));
+		JSONTestHelper.assertSameJSON("Wrong value for key c.cc", new JSONArray("[\"cc1\",2, [1,2,3], {\"cc5\":5}]"), SmartStore.Companion.project(json, "c.cc"));
+		JSONTestHelper.assertSameJSON("Wrong value for key c.cc.cc5", new JSONArray("[5]"), SmartStore.Companion.project(json, "c.cc.cc5"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d", new JSONArray("[{\"dd\":[{\"ddd\":\"ddd11\"},{\"ddd\":\"ddd12\"}]}, {\"dd\":[{\"ddd\":\"ddd21\"}]}, {\"dd\":[{\"ddd\":\"ddd31\"},{\"ddd3\":\"ddd32\"}]}]"), SmartStore.Companion.project(json, "d"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d.dd", new JSONArray("[[{\"ddd\":\"ddd11\"},{\"ddd\":\"ddd12\"}], [{\"ddd\":\"ddd21\"}], [{\"ddd\":\"ddd31\"},{\"ddd3\":\"ddd32\"}]]"), SmartStore.Companion.project(json, "d.dd"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d.dd.ddd", new JSONArray("[[\"ddd11\",\"ddd12\"],[\"ddd21\"],[\"ddd31\"]]"), SmartStore.Companion.project(json, "d.dd.ddd"));
+		JSONTestHelper.assertSameJSON("Wrong value for key d.dd.ddd3", new JSONArray("[[\"ddd32\"]]"), SmartStore.Companion.project(json, "d.dd.ddd3"));
 	}
 
 	/**
@@ -184,12 +184,12 @@ public class SmartStoreTest extends SmartStoreTestCase {
 	@Test
 	public void testProjectMissingVsSetToNull() throws JSONException {
 		JSONObject json = new JSONObject("{\"a\":null, \"b\":{\"bb\":null}, \"c\":{\"cc\":{\"ccc\":null}}}");
-		Assert.assertEquals(JSONObject.NULL, SmartStore.projectReturningNULLObject(json, "a"));
-		Assert.assertEquals(JSONObject.NULL, SmartStore.projectReturningNULLObject(json, "b.bb"));
-		Assert.assertEquals(JSONObject.NULL, SmartStore.projectReturningNULLObject(json, "c.cc.ccc"));
-		Assert.assertEquals(null, SmartStore.projectReturningNULLObject(json, "a1"));
-		Assert.assertEquals(null, SmartStore.projectReturningNULLObject(json, "b.bb1"));
-		Assert.assertEquals(null, SmartStore.projectReturningNULLObject(json, "c.cc.ccc1"));
+		Assert.assertEquals(JSONObject.NULL, SmartStore.Companion.projectReturningNULLObject(json, "a"));
+		Assert.assertEquals(JSONObject.NULL, SmartStore.Companion.projectReturningNULLObject(json, "b.bb"));
+		Assert.assertEquals(JSONObject.NULL, SmartStore.Companion.projectReturningNULLObject(json, "c.cc.ccc"));
+		Assert.assertEquals(null, SmartStore.Companion.projectReturningNULLObject(json, "a1"));
+		Assert.assertEquals(null, SmartStore.Companion.projectReturningNULLObject(json, "b.bb1"));
+		Assert.assertEquals(null, SmartStore.Companion.projectReturningNULLObject(json, "c.cc.ccc1"));
 	}
 
 	/**
@@ -1537,7 +1537,7 @@ public class SmartStoreTest extends SmartStoreTestCase {
 		cursor.close();
 
 		// Test table renamed and column added
-		SmartStore.updateTableNameAndAddColumns(db, TEST_TABLE, NEW_TEST_TABLE, new String[] { NEW_COLUMN });
+		SmartStore.Companion.updateTableNameAndAddColumns(db, TEST_TABLE, NEW_TEST_TABLE, new String[] { NEW_COLUMN });
 
 		// Ensure new table has replaced old table
 		cursor = db.query("sqlite_master", new String[] { "sql" }, "name = ?", new String[] { NEW_TEST_TABLE }, null, null, null);

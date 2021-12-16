@@ -67,11 +67,9 @@ import kotlin.jvm.Synchronized
  * SmartStore is inspired by the Apple Newton OS Soup/Store model.
  * The main challenge here is how to effectively store documents with dynamic fields, and still allow indexing and searching.
  */
-class SmartStore {
+class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?) {
     // Backing database
-    protected var dbLocal: SQLiteDatabase? = null
-    var dbOpenHelper: SQLiteOpenHelper? = null
-    var encryptionKey: String? = null
+    val database: SQLiteDatabase = dbOpenHelper.getWritableDatabase(encryptionKey)
     /**
      * @return ftsX to be used when creating the virtual table to support full_text queries
      */
@@ -85,36 +83,6 @@ class SmartStore {
 
     // background executor
     private val threadPool = Executors.newFixedThreadPool(1)
-
-    /**
-     * Relies on SQLiteOpenHelper for database handling.
-     *
-     * @param dbOpenHelper DB open helper.
-     * @param encryptionKey Encryption key.
-     */
-    constructor(dbOpenHelper: SQLiteOpenHelper?, encryptionKey: String?) {
-        this.dbOpenHelper = dbOpenHelper
-        this.encryptionKey = encryptionKey
-    }
-
-    /**
-     * Package-level constructor. Should be used in tests only.
-     *
-     * @param db Database.
-     */
-    internal constructor(db: SQLiteDatabase?) {
-        dbLocal = db
-    }
-
-    /**
-     * Return db
-     */
-    val database: SQLiteDatabase
-        get() = if (dbLocal != null) {
-            dbLocal
-        } else {
-            dbOpenHelper!!.getWritableDatabase(encryptionKey)
-        }
 
     /**
      * If turned on, explain query plan is run before executing a query and stored in lastExplainQueryPlan
@@ -499,7 +467,7 @@ class SmartStore {
 
             // Getting index specs from indexPaths skipping json1 index specs
             val mapAllSpecs = IndexSpec.mapForIndexSpecs(getSoupIndexSpecs(soupName))
-            val indexSpecsList: MutableList<IndexSpec?> = ArrayList()
+            val indexSpecsList: MutableList<IndexSpec> = ArrayList()
             for (indexPath: String in indexPaths) {
                 if (mapAllSpecs.containsKey(indexPath)) {
                     val indexSpec = mapAllSpecs[indexPath]
@@ -513,7 +481,7 @@ class SmartStore {
                     )
                 }
             }
-            val indexSpecs: Array<IndexSpec> = indexSpecsList.(toTypedArray())!!
+            val indexSpecs: Array<IndexSpec> = indexSpecsList.toTypedArray()
             if (indexSpecs.size == 0) {
                 // Nothing to do
                 return
@@ -777,7 +745,7 @@ class SmartStore {
      */
     @Throws(JSONException::class)
     fun queryWithArgs(querySpec: QuerySpec, pageIndex: Int, vararg whereArgs: String?): JSONArray {
-        if (whereArgs != null && querySpec.queryType != QuerySpec.QueryType.smart) {
+        if (whereArgs.filterNotNull().isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart) {
             throw SmartStoreException("whereArgs can only be provided for smart queries")
         }
         val resultAsArray = JSONArray()
@@ -808,7 +776,7 @@ class SmartStore {
         resultAsStringBuilder: StringBuilder?,
         querySpec: QuerySpec,
         pageIndex: Int,
-        vararg whereArgs: String
+        vararg whereArgs: String?
     ) {
         val computeResultAsString = resultAsStringBuilder != null
         val db = database
@@ -904,7 +872,7 @@ class SmartStore {
                 if (computeResultAsString) {
                     resultAsStringBuilder!!.append("null")
                 } else {
-                    resultAsArray.put(null)
+                    resultAsArray!!.put(null as Any?)
                 }
             } else if (valueType == Cursor.FIELD_TYPE_STRING) {
                 var raw = cursor.getString(i)
@@ -981,7 +949,7 @@ class SmartStore {
                 '\b' -> sb.append("\\b")
                 '\t' -> sb.append("\\t")
                 '\n' -> sb.append("\\n")
-                '\f' -> sb.append("\\f")
+                '\u000c' -> sb.append("\\f") // Kotlin does not support '\f', so we must use unicode code point.
                 '\r' -> sb.append("\\r")
                 else -> if (c < ' ') {
                     val t = "000" + Integer.toHexString(c.toInt())
@@ -1186,17 +1154,17 @@ class SmartStore {
      * @throws JSONException
      */
     @Throws(JSONException::class)
-    fun retrieve(soupName: String, vararg soupEntryIds: Long): JSONArray {
+    fun retrieve(soupName: String, vararg soupEntryIds: Long?): JSONArray {
         val db = database
         synchronized(db) {
             val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
             val result = JSONArray()
             if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                for (soupEntryId: Long in soupEntryIds) {
+                for (soupEntryId: Long? in soupEntryIds) {
                     val raw = (dbOpenHelper as DBOpenHelper).loadSoupBlob(
                         soupTableName,
-                        soupEntryId,
+                        soupEntryId!!,
                         encryptionKey
                     )
                     if (raw != null) {
@@ -1213,7 +1181,7 @@ class SmartStore {
                         null,
                         null,
                         getSoupEntryIdsPredicate(soupEntryIds),
-                        *null as Array<String?>?
+                        null
                     )
                     if (!cursor.moveToFirst()) {
                         return result
@@ -1472,7 +1440,7 @@ class SmartStore {
      * @param soupName
      * @param soupEntryIds
      */
-    fun delete(soupName: String?, vararg soupEntryIds: Long?) {
+    fun delete(soupName: String, vararg soupEntryIds: Long?) {
         val db = database
         synchronized(db) { delete(soupName, soupEntryIds, true) }
     }
@@ -1483,7 +1451,7 @@ class SmartStore {
      * @param soupEntryIds
      * @param handleTx
      */
-    fun delete(soupName: String, soupEntryIds: Array<Long>, handleTx: Boolean) {
+    fun delete(soupName: String, soupEntryIds: Array<out Long?>, handleTx: Boolean) {
         val db = database
         synchronized(db) {
             val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
@@ -1592,14 +1560,14 @@ class SmartStore {
     /**
      * @return predicate to match soup entries by id
      */
-    private fun getSoupEntryIdsPredicate(soupEntryIds: Array<Long>): String {
+    private fun getSoupEntryIdsPredicate(soupEntryIds: Array<out Long?>): String {
         return buildInStatement(ID_COL, TextUtils.join(",", soupEntryIds))
     }
 
     /**
      * @return predicate to match entries by rowid
      */
-    private fun getRowIdsPredicate(rowids: Array<Long>): String {
+    private fun getRowIdsPredicate(rowids: Array<out Long?>): String {
         return buildInStatement(ROWID_COL, TextUtils.join(",", rowids))
     }
 
@@ -1766,8 +1734,8 @@ class SmartStore {
         const val SOUP_CREATED_DATE = "_soupCreatedDate"
 
         // Predicates
-        val SOUP_NAME_PREDICATE = SOUP_NAME_COL + " = ?"
-        val ID_PREDICATE = ID_COL + " = ?"
+        const val SOUP_NAME_PREDICATE = SOUP_NAME_COL + " = ?"
+        const val ID_PREDICATE = ID_COL + " = ?"
         protected val ROWID_PREDICATE = ROWID_COL + " =?"
 
         /**

@@ -201,7 +201,7 @@ public class SyncUpTarget extends SyncTarget {
      */
     public String createOnServer(SyncManager syncManager, JSONObject record, List<String> fieldlist) throws JSONException, IOException {
         fieldlist = this.createFieldlist != null ? this.createFieldlist : fieldlist;
-        final String objectType = (String) SmartStore.project(record, Constants.SOBJECT_TYPE);
+        final String objectType = (String) SmartStore.Companion.project(record, Constants.SOBJECT_TYPE);
         final Map<String,Object> fields = buildFieldsMap(record, fieldlist, getIdFieldName(), getModificationDateFieldName());
         final String externalId = externalIdFieldName != null ? JSONObjectHelper.optString(record, externalIdFieldName) : null;
         if (externalId != null
@@ -274,7 +274,7 @@ public class SyncUpTarget extends SyncTarget {
      * @throws IOException
      */
     public int deleteOnServer(SyncManager syncManager, JSONObject record) throws JSONException, IOException {
-        final String objectType = (String) SmartStore.project(record, Constants.SOBJECT_TYPE);
+        final String objectType = (String) SmartStore.Companion.project(record, Constants.SOBJECT_TYPE);
         final String objectId = record.getString(getIdFieldName());
         return deleteOnServer(syncManager, objectType, objectId);
     }
@@ -310,7 +310,7 @@ public class SyncUpTarget extends SyncTarget {
      */
     public int updateOnServer(SyncManager syncManager, JSONObject record, List<String> fieldlist) throws JSONException, IOException {
         fieldlist = this.updateFieldlist != null ? this.updateFieldlist : fieldlist;
-        final String objectType = (String) SmartStore.project(record, Constants.SOBJECT_TYPE);
+        final String objectType = (String) SmartStore.Companion.project(record, Constants.SOBJECT_TYPE);
         final String objectId = record.getString(getIdFieldName());
         final Map<String,Object> fields = buildFieldsMap(record, fieldlist, getIdFieldName(), getModificationDateFieldName());
         return updateOnServer(syncManager, objectType, objectId, fields);
@@ -344,7 +344,7 @@ public class SyncUpTarget extends SyncTarget {
      * @return
      */
     protected RecordModDate fetchLastModifiedDate(SyncManager syncManager, JSONObject record) throws JSONException, IOException {
-        final String objectType = (String) SmartStore.project(record, Constants.SOBJECT_TYPE);
+        final String objectType = (String) SmartStore.Companion.project(record, Constants.SOBJECT_TYPE);
         final String objectId = record.getString(getIdFieldName());
         RestRequest lastModRequest = RestRequest.getRequestForRetrieve(syncManager.apiVersion, objectType, objectId, Arrays.asList(getModificationDateFieldName()));
         RestResponse lastModResponse = syncManager.sendSyncWithMobileSyncUserAgent(lastModRequest);
@@ -485,7 +485,7 @@ public class SyncUpTarget extends SyncTarget {
         Map<String,Object> fields = new HashMap<>();
         for (String fieldName : fieldlist) {
             if (!fieldName.equals(idFieldName) && !fieldName.equals(modificationDateFieldName)) {
-                Object fieldValue = SmartStore.projectReturningNULLObject(record, fieldName);
+                Object fieldValue = SmartStore.Companion.projectReturningNULLObject(record, fieldName);
                 if (fieldValue != null) {
                     fields.put(fieldName, fieldValue == JSONObject.NULL ? null : fieldValue);
                 }

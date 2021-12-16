@@ -124,7 +124,7 @@ public class SmartStoreExternalStorageTest extends SmartStoreTest {
 
 		// Act
 		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
-		SmartStore.changeKey(db, getEncryptionKey(), newPasscode);
+		SmartStore.Companion.changeKey(db, getEncryptionKey(), newPasscode);
 		store = new SmartStore(dbOpenHelper, newPasscode);
 
 		// Verify that data is still accessible

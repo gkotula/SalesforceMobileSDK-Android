@@ -213,7 +213,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * manage locking at our level anyway.
 		 */
 		db.setLockingEnabled(false);
-		SmartStore.createMetaTables(db);
+		SmartStore.Companion.createMetaTables(db);
 	}
 
 	@Override
@@ -232,7 +232,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 
 	@Override
 	public void onOpen(SQLiteDatabase db) {
-		(new SmartStore(db)).resumeLongOperations();
+		(new SmartStore(this, SmartStoreSDKManager.getEncryptionKey())).resumeLongOperations();
 	}
 
 	/**
