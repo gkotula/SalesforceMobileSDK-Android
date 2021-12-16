@@ -26,38 +26,20 @@
  */
 package com.salesforce.androidsdk.smartstore.store
 
-import com.salesforce.androidsdk.smartstore.store.SmartStore.FtsExtension
-import com.salesforce.androidsdk.smartstore.store.DBHelper
-import org.json.JSONObject
-import com.salesforce.androidsdk.smartstore.store.DBOpenHelper
-import com.salesforce.androidsdk.smartstore.store.IndexSpec
-import com.salesforce.androidsdk.smartstore.store.SoupSpec
-import com.salesforce.androidsdk.smartstore.store.SmartStore.SmartStoreException
 import android.content.ContentValues
 import android.database.Cursor
-import com.salesforce.androidsdk.smartstore.store.SmartStore
+import android.text.TextUtils
+import com.salesforce.androidsdk.analytics.EventBuilderHelper
 import com.salesforce.androidsdk.app.SalesforceSDKManager
+import com.salesforce.androidsdk.smartstore.store.LongOperation.LongOperationType
+import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger
+import net.sqlcipher.database.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONException
-import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger
-import com.salesforce.androidsdk.analytics.EventBuilderHelper
-import com.salesforce.androidsdk.smartstore.store.SmartStore.TypeGroup
-import android.text.TextUtils
-import com.salesforce.androidsdk.smartstore.store.LongOperation
-import com.salesforce.androidsdk.smartstore.store.LongOperation.LongOperationType
-import kotlin.Throws
-import com.salesforce.androidsdk.smartstore.store.AlterSoupLongOperation
-import com.salesforce.androidsdk.smartstore.store.QuerySpec
-import com.salesforce.androidsdk.smartstore.store.SmartSqlHelper
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SQLiteOpenHelper
+import org.json.JSONObject
 import java.io.File
-import java.lang.Exception
-import java.lang.RuntimeException
-import java.lang.StringBuilder
-import java.util.ArrayList
+import java.util.*
 import java.util.concurrent.Executors
-import kotlin.jvm.Synchronized
 
 /**
  * Smart store
@@ -67,9 +49,13 @@ import kotlin.jvm.Synchronized
  * SmartStore is inspired by the Apple Newton OS Soup/Store model.
  * The main challenge here is how to effectively store documents with dynamic fields, and still allow indexing and searching.
  */
-class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?) {
+open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?) {
     // Backing database
-    val database: SQLiteDatabase = dbOpenHelper.getWritableDatabase(encryptionKey)
+    val database: SQLiteDatabase by lazy { dbOpenHelper.getWritableDatabase(encryptionKey) }
+    init {
+        resumeLongOperations()
+    }
+
     /**
      * @return ftsX to be used when creating the virtual table to support full_text queries
      */
@@ -106,9 +92,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         get() {
             var size = File(database.path).length()
                 .toInt() // XXX That cast will be trouble if the file is more than 2GB
-            if (dbOpenHelper is DBOpenHelper) {
-                size += (dbOpenHelper as DBOpenHelper).getSizeOfDir(null)
-            }
+            size += dbOpenHelper.getSizeOfDir(null)
             return size
         }
 
@@ -161,18 +145,17 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         replaceWith = "registerSoup(soupName: String?, indexSpecs: Array<IndexSpec>)"
     )
     fun registerSoupWithSpec(soupSpec: SoupSpec, indexSpecs: Array<IndexSpec>) {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             val soupName = soupSpec.soupName
             if (soupName == null) throw SmartStoreException("Bogus soup name:$soupName")
-            if (indexSpecs.size == 0) throw SmartStoreException("No indexSpecs specified for soup: $soupName")
+            if (indexSpecs.isEmpty()) throw SmartStoreException("No indexSpecs specified for soup: $soupName")
             if (IndexSpec.hasJSON1(indexSpecs) && soupSpec.features.contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) throw SmartStoreException(
                 "Can't have JSON1 index specs in externally stored soup:$soupName"
             )
             if (hasSoup(soupName)) return  // soup already exist - do nothing
 
             // First get a table name
-            var soupTableName: String? = null
+            lateinit var soupTableName: String
             val soupMapValues = ContentValues()
             soupMapValues.put(SOUP_NAME_COL, soupName)
 
@@ -181,20 +164,21 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 soupMapValues.put(feature, 1)
             }
             try {
-                db.beginTransaction()
-                val soupId = DBHelper.getInstance(db).insert(db, SOUP_ATTRS_TABLE, soupMapValues)
+                database.beginTransaction()
+                val soupId =
+                    DBHelper.getInstance(database).insert(database, SOUP_ATTRS_TABLE, soupMapValues)
                 soupTableName = getSoupTableName(soupId)
 
                 // Do the rest - create table / indexes
                 registerSoupUsingTableName(soupSpec, indexSpecs, soupTableName)
-                db.setTransactionSuccessful()
+                database.setTransactionSuccessful()
             } finally {
-                db.endTransaction()
+                database.endTransaction()
             }
             if (SalesforceSDKManager.getInstance().isTestRun) {
                 logRegisterSoupEvent(soupSpec, indexSpecs)
             } else {
-                threadPool.execute(Runnable { logRegisterSoupEvent(soupSpec, indexSpecs) })
+                threadPool.execute { logRegisterSoupEvent(soupSpec, indexSpecs) }
             }
         }
     }
@@ -234,7 +218,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
     fun registerSoupUsingTableName(
         soupSpec: SoupSpec,
         indexSpecs: Array<IndexSpec>,
-        soupTableName: String?
+        soupTableName: String
     ) {
         // Prepare SQL for creating soup table and its indices
         val createTableStmt = StringBuilder() // to create new soup table
@@ -266,8 +250,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 )
             )
         }
-        var i = 0
-        for (indexSpec in indexSpecs) {
+        indexSpecs.forEachIndexed { i, indexSpec ->
             // Column name or expression the db index is on
             var columnName = soupTableName + "_" + i
             if (TypeGroup.value_indexed_with_json_extract.isMember(indexSpec.type)) {
@@ -306,7 +289,6 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
 
             // for the cache
             indexSpecsToCache[i] = IndexSpec(indexSpec.path, indexSpec.type, columnName)
-            i++
         }
         createTableStmt.append(")")
 
@@ -337,8 +319,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
             for (values in soupIndexMapInserts) {
                 DBHelper.getInstance(db).insert(db, SOUP_INDEX_MAP_TABLE, values)
             }
-            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                (dbOpenHelper as DBOpenHelper).createExternalBlobsDirectory(soupTableName)
+            if (usesExternalStorage(soupName)) {
+                dbOpenHelper.createExternalBlobsDirectory(soupTableName)
             }
             db.setTransactionSuccessful()
 
@@ -356,8 +338,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * Finish long operations that were interrupted
      */
     fun resumeLongOperations() {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             for (longOperation: LongOperation in longOperations) {
                 try {
                     longOperation.run()
@@ -373,13 +354,12 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     val longOperations: Array<LongOperation>
         get() {
-            val db = database
             val longOperations: MutableList<LongOperation> = ArrayList()
-            synchronized(db) {
+            synchronized(database) {
                 var cursor: Cursor? = null
                 try {
-                    cursor = DBHelper.getInstance(db).query(
-                        db,
+                    cursor = DBHelper.getInstance(database).query(
+                        database,
                         LONG_OPERATIONS_STATUS_TABLE,
                         arrayOf(ID_COL, TYPE_COL, DETAILS_COL, STATUS_COL),
                         null,
@@ -460,9 +440,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param handleTx
      */
     fun reIndexSoup(soupName: String, indexPaths: Array<String>, handleTx: Boolean) {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
 
             // Getting index specs from indexPaths skipping json1 index specs
@@ -482,39 +461,44 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 }
             }
             val indexSpecs: Array<IndexSpec> = indexSpecsList.toTypedArray()
-            if (indexSpecs.size == 0) {
+            if (indexSpecs.isEmpty()) {
                 // Nothing to do
                 return
             }
             val hasFts = IndexSpec.hasFTS(indexSpecs)
             if (handleTx) {
-                db.beginTransaction()
+                database.beginTransaction()
             }
             var cursor: Cursor? = null
             try {
-                val projection: Array<String>
-                if (usesExternalStorage(soupName)) {
-                    projection = arrayOf(ID_COL)
+                val projection: Array<String> = if (usesExternalStorage(soupName)) {
+                    arrayOf(ID_COL)
                 } else {
-                    projection = arrayOf(ID_COL, SOUP_COL)
+                    arrayOf(ID_COL, SOUP_COL)
                 }
-                cursor =
-                    DBHelper.getInstance(db).query(db, soupTableName, projection, null, null, null)
-                if (cursor.moveToFirst()) {
+                cursor = DBHelper.getInstance(database).query(
+                    database,
+                    soupTableName,
+                    projection,
+                    null,
+                    null,
+                    null
+                )
+                if (cursor != null && cursor.moveToFirst()) {
                     do {
                         val soupEntryId = cursor.getString(0)
                         try {
-                            var soupElt: JSONObject
-                            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                                soupElt = (dbOpenHelper as DBOpenHelper).loadSoupBlob(
-                                    soupTableName,
-                                    soupEntryId.toLong(),
-                                    encryptionKey
-                                )
-                            } else {
-                                val soupRaw = cursor.getString(1)
-                                soupElt = JSONObject(soupRaw)
-                            }
+                            val soupElt: JSONObject =
+                                if (usesExternalStorage(soupName)) {
+                                    dbOpenHelper.loadSoupBlob(
+                                        soupTableName,
+                                        soupEntryId.toLong(),
+                                        encryptionKey
+                                    )
+                                } else {
+                                    val soupRaw = cursor.getString(1)
+                                    JSONObject(soupRaw)
+                                }
                             val contentValues = ContentValues()
                             projectIndexedPaths(
                                 soupElt,
@@ -522,8 +506,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                                 indexSpecs,
                                 TypeGroup.value_extracted_to_column
                             )
-                            DBHelper.getInstance(db).update(
-                                db,
+                            DBHelper.getInstance(database).update(
+                                database,
                                 soupTableName,
                                 contentValues,
                                 ID_PREDICATE,
@@ -540,8 +524,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                                     indexSpecs,
                                     TypeGroup.value_extracted_to_fts_column
                                 )
-                                DBHelper.getInstance(db).update(
-                                    db,
+                                DBHelper.getInstance(database).update(
+                                    database,
                                     soupTableNameFts,
                                     contentValuesFts,
                                     ROWID_PREDICATE,
@@ -556,8 +540,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 }
             } finally {
                 if (handleTx) {
-                    db.setTransactionSuccessful()
-                    db.endTransaction()
+                    database.setTransactionSuccessful()
+                    database.endTransaction()
                 }
                 safeClose(cursor)
             }
@@ -571,11 +555,10 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @return
      */
     fun getSoupIndexSpecs(soupName: String): Array<IndexSpec> {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
-            return DBHelper.getInstance(db).getIndexSpecs(db, soupName)
+            return DBHelper.getInstance(database).getIndexSpecs(database, soupName)
         }
     }
 
@@ -587,8 +570,9 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @return
      */
     fun hasIndexForPath(soupName: String?, path: String?): Boolean {
-        val db = database
-        synchronized(db) { return DBHelper.getInstance(db).hasIndexForPath(db, soupName, path) }
+        synchronized(database) {
+            return DBHelper.getInstance(database).hasIndexForPath(database, soupName, path)
+        }
     }
 
     /**
@@ -596,22 +580,20 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param soupName
      */
     fun clearSoup(soupName: String) {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
-            db.beginTransaction()
+            database.beginTransaction()
             try {
-                DBHelper.getInstance(db).delete(db, soupTableName, null)
+                DBHelper.getInstance(database).delete(database, soupTableName, null)
                 if (hasFTS(soupName)) {
-                    DBHelper.getInstance(db).delete(db, soupTableName + FTS_SUFFIX, null)
+                    DBHelper.getInstance(database)
+                        .delete(database, soupTableName + FTS_SUFFIX, null)
                 }
-                if (dbOpenHelper is DBOpenHelper) {
-                    (dbOpenHelper as DBOpenHelper).removeExternalBlobsDirectory(soupTableName)
-                }
+                dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
             } finally {
-                db.setTransactionSuccessful()
-                db.endTransaction()
+                database.setTransactionSuccessful()
+                database.endTransaction()
             }
         }
     }
@@ -623,8 +605,9 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @return true if soup exists, false otherwise
      */
     fun hasSoup(soupName: String?): Boolean {
-        val db = database
-        synchronized(db) { return DBHelper.getInstance(db).getSoupTableName(db, soupName) != null }
+        synchronized(database) {
+            return DBHelper.getInstance(database).getSoupTableName(database, soupName) != null
+        }
     }
 
     /**
@@ -635,29 +618,26 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param soupName
      */
     fun dropSoup(soupName: String) {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
             if (soupTableName != null) {
-                db.execSQL("DROP TABLE IF EXISTS $soupTableName")
+                database.execSQL("DROP TABLE IF EXISTS $soupTableName")
                 if (hasFTS(soupName)) {
-                    db.execSQL("DROP TABLE IF EXISTS " + soupTableName + FTS_SUFFIX)
+                    database.execSQL("DROP TABLE IF EXISTS " + soupTableName + FTS_SUFFIX)
                 }
                 try {
-                    db.beginTransaction()
-                    DBHelper.getInstance(db)
-                        .delete(db, SOUP_ATTRS_TABLE, SOUP_NAME_PREDICATE, soupName)
-                    DBHelper.getInstance(db)
-                        .delete(db, SOUP_INDEX_MAP_TABLE, SOUP_NAME_PREDICATE, soupName)
-                    if (dbOpenHelper is DBOpenHelper) {
-                        (dbOpenHelper as DBOpenHelper).removeExternalBlobsDirectory(soupTableName)
-                    }
-                    db.setTransactionSuccessful()
+                    database.beginTransaction()
+                    DBHelper.getInstance(database)
+                        .delete(database, SOUP_ATTRS_TABLE, SOUP_NAME_PREDICATE, soupName)
+                    DBHelper.getInstance(database)
+                        .delete(database, SOUP_INDEX_MAP_TABLE, SOUP_NAME_PREDICATE, soupName)
+                    dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
+                    database.setTransactionSuccessful()
 
                     // Remove from cache
-                    DBHelper.getInstance(db).removeFromCache(soupName)
+                    DBHelper.getInstance(database).removeFromCache(soupName)
                 } finally {
-                    db.endTransaction()
+                    database.endTransaction()
                 }
             }
         }
@@ -667,8 +647,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * Destroy all the soups in the smartstore
      */
     fun dropAllSoups() {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             val soupNames = allSoupNames
             for (soupName: String in soupNames) {
                 dropSoup(soupName)
@@ -681,13 +660,12 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     val allSoupNames: List<String>
         get() {
-            val db = database
-            synchronized(db) {
+            synchronized(database) {
                 val soupNames: MutableList<String> = ArrayList()
                 var cursor: Cursor? = null
                 try {
-                    cursor = DBHelper.getInstance(db).query(
-                        db,
+                    cursor = DBHelper.getInstance(database).query(
+                        database,
                         SOUP_ATTRS_TABLE,
                         arrayOf(SOUP_NAME_COL),
                         SOUP_NAME_COL,
@@ -713,8 +691,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Deprecated(message = "We are removing external storage and soup spec in 11.0")
     fun getSoupSpec(soupName: String?): SoupSpec {
-        val db = database
-        val features = DBHelper.getInstance(db).getFeatures(db, soupName)
+        val features = DBHelper.getInstance(database).getFeatures(database, soupName)
         return SoupSpec(soupName, *features.toTypedArray())
     }
 
@@ -745,7 +722,9 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun queryWithArgs(querySpec: QuerySpec, pageIndex: Int, vararg whereArgs: String?): JSONArray {
-        if (whereArgs.filterNotNull().isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart) {
+        if (whereArgs.filterNotNull()
+                .isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart
+        ) {
             throw SmartStoreException("whereArgs can only be provided for smart queries")
         }
         val resultAsArray = JSONArray()
@@ -770,6 +749,15 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         }
     }
 
+    private fun runQueryForJsonArrayResult(
+        result: JSONArray,
+        querySpec: QuerySpec,
+        pageIndex: Int,
+        vararg whereArgs: String?
+    ) {
+        TODO("runQueryForJsonArrayResult")
+    }
+
     @Throws(JSONException::class)
     private fun runQuery(
         resultAsArray: JSONArray?,
@@ -779,8 +767,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         vararg whereArgs: String?
     ) {
         val computeResultAsString = resultAsStringBuilder != null
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             val qt = querySpec.queryType
             val sql = convertSmartSql(querySpec.smartSql)
 
@@ -790,8 +777,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
             val limit = "$offsetRows,$numberRows"
             var cursor: Cursor? = null
             try {
-                cursor = DBHelper.getInstance(db).limitRawQuery(
-                    db,
+                cursor = DBHelper.getInstance(database).limitRawQuery(
+                    database,
                     sql,
                     limit,
                     *if (querySpec.args != null) querySpec.args else whereArgs
@@ -817,22 +804,22 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                                 resultAsArray!!.put(rowArray)
                             }
                         } else {
-                            var rowAsString: String? = null
-                            if (cursor.getColumnIndex(SoupSpec.FEATURE_EXTERNAL_STORAGE) >= 0) {
-                                // Presence of external storage column implies we must fetch from storage. Soup name and entry id values can be extracted
-                                val soupTableName =
-                                    cursor.getString(cursor.getColumnIndex(SoupSpec.FEATURE_EXTERNAL_STORAGE))
-                                val soupEntryId =
-                                    cursor.getLong(cursor.getColumnIndex(SOUP_ENTRY_ID))
-                                rowAsString =
-                                    (dbOpenHelper as DBOpenHelper?)!!.loadSoupBlobAsString(
+                            val rowAsString: String? =
+                                if (cursor.getColumnIndex(SoupSpec.FEATURE_EXTERNAL_STORAGE) >= 0) {
+                                    // Presence of external storage column implies we must fetch from storage. Soup name and entry id values can be extracted
+                                    val soupTableName =
+                                        cursor.getString(cursor.getColumnIndex(SoupSpec.FEATURE_EXTERNAL_STORAGE))
+                                    val soupEntryId =
+                                        cursor.getLong(cursor.getColumnIndex(SOUP_ENTRY_ID))
+
+                                    dbOpenHelper.loadSoupBlobAsString(
                                         soupTableName,
                                         soupEntryId,
                                         encryptionKey
                                     )
-                            } else {
-                                rowAsString = cursor.getString(0)
-                            }
+                                } else {
+                                    cursor.getString(0)
+                                }
                             if (computeResultAsString) {
                                 resultAsStringBuilder!!.append(rowAsString)
                             } else {
@@ -898,7 +885,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                         )
                     }
                     i++ // skip next column (_soupEntryId)
-                } else if (columnName == SOUP_COL || columnName.startsWith(SOUP_COL + ":") /* :num is appended to column name when result set has more than one column with same name */) {
+                } else if (columnName == SOUP_COL || columnName.startsWith("$SOUP_COL:") /* :num is appended to column name when result set has more than one column with same name */) {
                     if (computeResultAsString) {
                         resultAsStringBuilder!!.append(raw)
                     } else {
@@ -935,27 +922,26 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
 
     private fun escapeStringValue(raw: String): String {
         val sb = StringBuilder()
-        for (i in 0 until raw.length) {
-            val c = raw[i]
-            when (c) {
+        for (element in raw) {
+            when (element) {
                 '\\', '"' -> {
                     sb.append('\\')
-                    sb.append(c)
+                    sb.append(element)
                 }
                 '/' -> {
                     sb.append('\\')
-                    sb.append(c)
+                    sb.append(element)
                 }
                 '\b' -> sb.append("\\b")
                 '\t' -> sb.append("\\t")
                 '\n' -> sb.append("\\n")
                 '\u000c' -> sb.append("\\f") // Kotlin does not support '\f', so we must use unicode code point.
                 '\r' -> sb.append("\\r")
-                else -> if (c < ' ') {
-                    val t = "000" + Integer.toHexString(c.toInt())
+                else -> if (element < ' ') {
+                    val t = "000" + Integer.toHexString(element.code)
                     sb.append("\\u" + t.substring(t.length - 4))
                 } else {
-                    sb.append(c)
+                    sb.append(element)
                 }
             }
         }
@@ -967,10 +953,10 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @return count of results for a query
      */
     fun countQuery(querySpec: QuerySpec): Int {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             val countSql = convertSmartSql(querySpec.countSmartSql)
-            return DBHelper.getInstance(db).countRawCountQuery(db, countSql, *querySpec.args)
+            return DBHelper.getInstance(database)
+                .countRawCountQuery(database, countSql, *querySpec.args)
         }
     }
 
@@ -978,9 +964,10 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param smartSql
      * @return
      */
-    fun convertSmartSql(smartSql: String?): String {
-        val db = database
-        synchronized(db) { return SmartSqlHelper.getInstance(db).convertSmartSql(db, smartSql) }
+    fun convertSmartSql(smartSql: String): String {
+        synchronized(database) {
+            return SmartSqlHelper.getInstance(database).convertSmartSql(database, smartSql)
+        }
     }
 
     /**
@@ -993,8 +980,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun create(soupName: String, soupElt: JSONObject): JSONObject? {
-        val db = database
-        synchronized(db) { return create(soupName, soupElt, true) }
+        synchronized(database) { return create(soupName, soupElt, true) }
     }
 
     /**
@@ -1007,17 +993,16 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun create(soupName: String, soupElt: JSONObject, handleTx: Boolean): JSONObject? {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
-            val indexSpecs = DBHelper.getInstance(db).getIndexSpecs(db, soupName)
+            val indexSpecs = DBHelper.getInstance(database).getIndexSpecs(database, soupName)
             try {
                 if (handleTx) {
-                    db.beginTransaction()
+                    database.beginTransaction()
                 }
                 val now = System.currentTimeMillis()
-                val soupEntryId = DBHelper.getInstance(db).getNextId(db, soupTableName)
+                val soupEntryId = DBHelper.getInstance(database).getNextId(database, soupTableName)
 
                 // Adding fields to soup element
                 soupElt.put(SOUP_ENTRY_ID, soupEntryId)
@@ -1038,7 +1023,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
 
                 // Inserting into database
                 var success =
-                    DBHelper.getInstance(db).insert(db, soupTableName, contentValues) == soupEntryId
+                    DBHelper.getInstance(database)
+                        .insert(database, soupTableName, contentValues) == soupEntryId
 
                 // Fts
                 if (success && hasFTS(soupName)) {
@@ -1052,12 +1038,12 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                         TypeGroup.value_extracted_to_fts_column
                     )
                     // InsertHelper not working against virtual fts table
-                    db.insert(soupTableNameFts, null, contentValuesFts)
+                    database.insert(soupTableNameFts, null, contentValuesFts)
                 }
 
                 // Add to external storage if applicable
-                if (success && usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                    success = (dbOpenHelper as DBOpenHelper).saveSoupBlob(
+                if (success && usesExternalStorage(soupName)) {
+                    success = dbOpenHelper.saveSoupBlob(
                         soupTableName,
                         soupEntryId,
                         soupElt,
@@ -1066,17 +1052,17 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 }
 
                 // Commit if successful
-                if (success) {
+                return if (success) {
                     if (handleTx) {
-                        db.setTransactionSuccessful()
+                        database.setTransactionSuccessful()
                     }
-                    return soupElt
+                    soupElt
                 } else {
-                    return null
+                    null
                 }
             } finally {
                 if (handleTx) {
-                    db.endTransaction()
+                    database.endTransaction()
                 }
             }
         }
@@ -1087,8 +1073,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @return true if soup has at least one full-text search index
      */
     private fun hasFTS(soupName: String): Boolean {
-        val db = database
-        synchronized(db) { return DBHelper.getInstance(db).hasFTS(db, soupName) }
+        synchronized(database) { return DBHelper.getInstance(database).hasFTS(database, soupName) }
     }
 
     /**
@@ -1138,6 +1123,10 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                         indexSpec.columnName,
                         (value as Number).toDouble()
                     )
+                    Type.json1,
+                    null -> {
+                        /* no-op */
+                    }
                 }
             } catch (e: Exception) {
                 // Ignore (will use the null value)
@@ -1155,14 +1144,13 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun retrieve(soupName: String, vararg soupEntryIds: Long?): JSONArray {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
             val result = JSONArray()
-            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
+            if (usesExternalStorage(soupName)) {
                 for (soupEntryId: Long? in soupEntryIds) {
-                    val raw = (dbOpenHelper as DBOpenHelper).loadSoupBlob(
+                    val raw = dbOpenHelper.loadSoupBlob(
                         soupTableName,
                         soupEntryId!!,
                         encryptionKey
@@ -1174,8 +1162,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
             } else {
                 var cursor: Cursor? = null
                 try {
-                    cursor = DBHelper.getInstance(db).query(
-                        db,
+                    cursor = DBHelper.getInstance(database).query(
+                        database,
                         soupTableName,
                         arrayOf(SOUP_COL),
                         null,
@@ -1209,8 +1197,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun update(soupName: String, soupElt: JSONObject, soupEntryId: Long): JSONObject? {
-        val db = database
-        synchronized(db) { return update(soupName, soupElt, soupEntryId, true) }
+        synchronized(database) { return update(soupName, soupElt, soupEntryId, true) }
     }
 
     /**
@@ -1230,15 +1217,15 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         soupEntryId: Long,
         handleTx: Boolean
     ): JSONObject? {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             try {
                 if (handleTx) {
-                    db.beginTransaction()
+                    database.beginTransaction()
                 }
-                val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
-                    ?: throw SmartStoreException("Soup: $soupName does not exist")
-                val indexSpecs = DBHelper.getInstance(db).getIndexSpecs(db, soupName)
+                val soupTableName =
+                    DBHelper.getInstance(database).getSoupTableName(database, soupName)
+                        ?: throw SmartStoreException("Soup: $soupName does not exist")
+                val indexSpecs = DBHelper.getInstance(database).getIndexSpecs(database, soupName)
                 val now = System.currentTimeMillis()
 
                 // In the case of an upsert with external id, _soupEntryId won't be in soupElt
@@ -1260,8 +1247,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 }
 
                 // Updating database
-                var success = DBHelper.getInstance(db).update(
-                    db,
+                var success = DBHelper.getInstance(database).update(
+                    database,
                     soupTableName,
                     contentValues,
                     ID_PREDICATE,
@@ -1278,8 +1265,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                         indexSpecs,
                         TypeGroup.value_extracted_to_fts_column
                     )
-                    success = DBHelper.getInstance(db).update(
-                        db,
+                    success = DBHelper.getInstance(database).update(
+                        database,
                         soupTableNameFts,
                         contentValuesFts,
                         ROWID_PREDICATE,
@@ -1288,25 +1275,25 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                 }
 
                 // Add to external storage if applicable
-                if (success && usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                    success = (dbOpenHelper as DBOpenHelper).saveSoupBlob(
+                if (success && usesExternalStorage(soupName)) {
+                    success = dbOpenHelper.saveSoupBlob(
                         soupTableName,
                         soupEntryId,
                         soupElt,
                         encryptionKey
                     )
                 }
-                if (success) {
+                return if (success) {
                     if (handleTx) {
-                        db.setTransactionSuccessful()
+                        database.setTransactionSuccessful()
                     }
-                    return soupElt
+                    soupElt
                 } else {
-                    return null
+                    null
                 }
             } finally {
                 if (handleTx) {
-                    db.endTransaction()
+                    database.endTransaction()
                 }
             }
         }
@@ -1322,8 +1309,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun upsert(soupName: String, soupElt: JSONObject, externalIdPath: String): JSONObject? {
-        val db = database
-        synchronized(db) { return upsert(soupName, soupElt, externalIdPath, true) }
+        synchronized(database) { return upsert(soupName, soupElt, externalIdPath, true) }
     }
 
     /**
@@ -1335,8 +1321,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Throws(JSONException::class)
     fun upsert(soupName: String, soupElt: JSONObject): JSONObject? {
-        val db = database
-        synchronized(db) { return upsert(soupName, soupElt, SOUP_ENTRY_ID) }
+        synchronized(database) { return upsert(soupName, soupElt, SOUP_ENTRY_ID) }
     }
 
     /**
@@ -1355,8 +1340,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         externalIdPath: String,
         handleTx: Boolean
     ): JSONObject? {
-        val db = database
-        synchronized(db) {
+        synchronized(database) {
             var entryId: Long = -1
             if ((externalIdPath == SOUP_ENTRY_ID)) {
                 if (soupElt.has(SOUP_ENTRY_ID)) {
@@ -1399,14 +1383,14 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param fieldValue
      */
     fun lookupSoupEntryId(soupName: String, fieldPath: String?, fieldValue: String): Long {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
-            val columnName = DBHelper.getInstance(db).getColumnNameForPath(db, soupName, fieldPath)
+            val columnName =
+                DBHelper.getInstance(database).getColumnNameForPath(database, soupName, fieldPath)
             var cursor: Cursor? = null
             try {
-                cursor = db.query(
+                cursor = database.query(
                     soupTableName,
                     arrayOf(ID_COL),
                     "$columnName = ?",
@@ -1441,8 +1425,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param soupEntryIds
      */
     fun delete(soupName: String, vararg soupEntryIds: Long?) {
-        val db = database
-        synchronized(db) { delete(soupName, soupEntryIds, true) }
+        synchronized(database) { delete(soupName, soupEntryIds, true) }
     }
 
     /**
@@ -1452,29 +1435,32 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param handleTx
      */
     fun delete(soupName: String, soupEntryIds: Array<out Long?>, handleTx: Boolean) {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
             if (handleTx) {
-                db.beginTransaction()
+                database.beginTransaction()
             }
             try {
-                DBHelper.getInstance(db)
-                    .delete(db, soupTableName, getSoupEntryIdsPredicate(soupEntryIds))
+                DBHelper.getInstance(database)
+                    .delete(database, soupTableName, getSoupEntryIdsPredicate(soupEntryIds))
                 if (hasFTS(soupName)) {
-                    DBHelper.getInstance(db)
-                        .delete(db, soupTableName + FTS_SUFFIX, getRowIdsPredicate(soupEntryIds))
+                    DBHelper.getInstance(database)
+                        .delete(
+                            database,
+                            soupTableName + FTS_SUFFIX,
+                            getRowIdsPredicate(soupEntryIds)
+                        )
                 }
-                if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-                    (dbOpenHelper as DBOpenHelper).removeSoupBlob(soupTableName, soupEntryIds)
+                if (usesExternalStorage(soupName)) {
+                    dbOpenHelper.removeSoupBlob(soupTableName, soupEntryIds)
                 }
                 if (handleTx) {
-                    db.setTransactionSuccessful()
+                    database.setTransactionSuccessful()
                 }
             } finally {
                 if (handleTx) {
-                    db.endTransaction()
+                    database.endTransaction()
                 }
             }
         }
@@ -1486,8 +1472,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param querySpec Query returning entries to delete (if querySpec uses smartSQL, it must select soup entry ids)
      */
     fun deleteByQuery(soupName: String, querySpec: QuerySpec) {
-        val db = database
-        synchronized(db) { deleteByQuery(soupName, querySpec, true) }
+        synchronized(database) { deleteByQuery(soupName, querySpec, true) }
     }
 
     /**
@@ -1497,12 +1482,11 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      * @param handleTx
      */
     fun deleteByQuery(soupName: String, querySpec: QuerySpec, handleTx: Boolean) {
-        val db = database
-        synchronized(db) {
-            val soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName)
+        synchronized(database) {
+            val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
             if (handleTx) {
-                db.beginTransaction()
+                database.beginTransaction()
             }
             try {
                 val subQuerySql = String.format(
@@ -1512,11 +1496,11 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                     querySpec.pageSize
                 )
                 val args = querySpec.args
-                if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
+                if (usesExternalStorage(soupName)) {
                     // Query list of ids and remove them from external storage
                     var c: Cursor? = null
                     try {
-                        c = db.query(
+                        c = database.query(
                             soupTableName,
                             arrayOf(ID_COL),
                             buildInStatement(ID_COL, subQuerySql),
@@ -1531,27 +1515,27 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
                             do {
                                 ids[counter++] = c.getLong(0)
                             } while (c.moveToNext())
-                            (dbOpenHelper as DBOpenHelper).removeSoupBlob(soupTableName, ids)
+                            dbOpenHelper.removeSoupBlob(soupTableName, ids)
                         }
                     } finally {
                         c?.close()
                     }
                 }
-                DBHelper.getInstance(db)
-                    .delete(db, soupTableName, buildInStatement(ID_COL, subQuerySql), *args)
+                DBHelper.getInstance(database)
+                    .delete(database, soupTableName, buildInStatement(ID_COL, subQuerySql), *args)
                 if (hasFTS(soupName)) {
-                    DBHelper.getInstance(db).delete(
-                        db, soupTableName + FTS_SUFFIX, buildInStatement(
+                    DBHelper.getInstance(database).delete(
+                        database, soupTableName + FTS_SUFFIX, buildInStatement(
                             ROWID_COL, subQuerySql
                         ), *args
                     )
                 }
                 if (handleTx) {
-                    db.setTransactionSuccessful()
+                    database.setTransactionSuccessful()
                 }
             } finally {
                 if (handleTx) {
-                    db.endTransaction()
+                    database.endTransaction()
                 }
             }
         }
@@ -1630,8 +1614,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      *
      */
     open class SmartStoreException : RuntimeException {
-        constructor(message: String?) : super(message) {}
-        constructor(message: String?, t: Throwable?) : super(message, t) {}
+        constructor(message: String?) : super(message)
+        constructor(message: String?, t: Throwable?) : super(message, t)
 
         companion object {
             private const val serialVersionUID = -6369452803270075464L
@@ -1647,9 +1631,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
      */
     @Deprecated(message = "We are removing external storage and soup spec in 11.0")
     fun usesExternalStorage(soupName: String?): Boolean {
-        val db = database
-        synchronized(db) {
-            return DBHelper.getInstance(db).getFeatures(db, soupName)
+        synchronized(database) {
+            return DBHelper.getInstance(database).getFeatures(database, soupName)
                 .contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)
         }
     }
@@ -1679,11 +1662,10 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         get() = TextUtils.join(" ", queryPragma("cipher_version"))
 
     private fun queryPragma(pragma: String): List<String?> {
-        val db = database
         val results = ArrayList<String?>()
         var c: Cursor? = null
         try {
-            c = db.rawQuery("PRAGMA $pragma", null)
+            c = database.rawQuery("PRAGMA $pragma", null)
             while (c.moveToNext()) {
                 results.add(c.getString(0))
             }
@@ -1734,9 +1716,9 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         const val SOUP_CREATED_DATE = "_soupCreatedDate"
 
         // Predicates
-        const val SOUP_NAME_PREDICATE = SOUP_NAME_COL + " = ?"
-        const val ID_PREDICATE = ID_COL + " = ?"
-        protected val ROWID_PREDICATE = ROWID_COL + " =?"
+        const val SOUP_NAME_PREDICATE = "$SOUP_NAME_COL = ?"
+        const val ID_PREDICATE = "$ID_COL = ?"
+        protected const val ROWID_PREDICATE = "$ROWID_COL =?"
 
         /**
          * Changes the encryption key on the smartstore.
@@ -1746,8 +1728,8 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
          * @param newKey New encryption key.
          */
         @Synchronized
-        fun changeKey(db: SQLiteDatabase?, oldKey: String?, newKey: String?) {
-            synchronized(db!!) {
+        fun changeKey(db: SQLiteDatabase, oldKey: String?, newKey: String?) {
+            synchronized(db) {
                 if (!TextUtils.isEmpty(newKey)) {
                     DBOpenHelper.changeKey(db, oldKey, newKey)
                     DBOpenHelper.reEncryptAllFiles(db, oldKey, newKey)
@@ -1920,7 +1902,7 @@ class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?)
         ) {
             synchronized(SmartStore::class.java) {
                 var sb = StringBuilder()
-                if (columns != null && columns.size > 0) {
+                if (columns != null && columns.isNotEmpty()) {
                     for (column: String? in columns) {
                         sb.append("ALTER TABLE ").append(oldName).append(" ADD COLUMN ")
                             .append(column).append(" INTEGER DEFAULT 0;")
