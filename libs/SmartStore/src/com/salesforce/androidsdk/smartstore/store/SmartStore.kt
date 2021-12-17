@@ -51,10 +51,19 @@ import java.util.concurrent.Executors
  */
 open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?) {
     // Backing database
-    val database: SQLiteDatabase by lazy { dbOpenHelper.getWritableDatabase(encryptionKey) }
-    init {
-        resumeLongOperations()
-    }
+    private val _database: SQLiteDatabase by lazy { dbOpenHelper.getWritableDatabase(encryptionKey) }
+    private var hasResumedLongOperations = false
+    val database: SQLiteDatabase
+        get() {
+            return synchronized(this) {
+                val db = _database // force lazy init
+                if (!hasResumedLongOperations) {
+                    hasResumedLongOperations = true
+                    resumeLongOperations()
+                }
+                db
+            }
+        }
 
     /**
      * @return ftsX to be used when creating the virtual table to support full_text queries

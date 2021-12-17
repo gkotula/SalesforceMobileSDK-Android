@@ -232,7 +232,8 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 
 	@Override
 	public void onOpen(SQLiteDatabase db) {
-//		(new SmartStore(this, SmartStoreSDKManager.getEncryptionKey())).resumeLongOperations();
+		// (new SmartStore(db)).resumeLongOperations();
+		// (new SmartStore(this, SmartStoreSDKManager.getEncryptionKey())).resumeLongOperations();
 	}
 
 	/**
