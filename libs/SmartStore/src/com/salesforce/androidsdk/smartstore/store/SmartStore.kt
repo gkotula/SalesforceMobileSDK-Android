@@ -411,10 +411,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
      * @throws JSONException
      */
     @Throws(JSONException::class)
-    fun alterSoup(
-        soupName: String?, indexSpecs: Array<IndexSpec?>?,
-        reIndexData: Boolean
-    ) {
+    fun alterSoup(soupName: String?, indexSpecs: Array<IndexSpec?>?, reIndexData: Boolean) {
         alterSoup(soupName, SoupSpec(soupName, *arrayOfNulls(0)), indexSpecs, reIndexData)
     }
 
@@ -433,7 +430,9 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
     )
     @Throws(JSONException::class)
     fun alterSoup(
-        soupName: String?, soupSpec: SoupSpec?, indexSpecs: Array<IndexSpec?>?,
+        soupName: String?,
+        soupSpec: SoupSpec?,
+        indexSpecs: Array<IndexSpec?>?,
         reIndexData: Boolean
     ) {
         val operation = AlterSoupLongOperation(this, soupName, soupSpec, indexSpecs, reIndexData)
@@ -1179,7 +1178,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                         null,
                         null,
                         getSoupEntryIdsPredicate(sanitizedSoupEntryIds),
-                        null
+                        *emptyArray()
                     )
                     if (!cursor.moveToFirst()) {
                         return result
@@ -1865,7 +1864,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
             if (path == null || path == "") {
                 return soup
             }
-            val pathElements = path.split("[.]").toTypedArray()
+            val pathElements = path.split(Regex("[.]")).toTypedArray()
             return projectRecursive(soup, pathElements, 0)
         }
 
