@@ -633,7 +633,10 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	public boolean removeSoupBlob(String soupTableName, Long[] soupEntryIds) {
 		File file;
 		boolean success = true;
-		for (long soupEntryId : soupEntryIds) {
+		for (Long soupEntryId : soupEntryIds) {
+			if (soupEntryId == null) {
+				continue;
+			}
 			file = getSoupBlobFile(soupTableName, soupEntryId);
 			success &= file.delete();
 		}

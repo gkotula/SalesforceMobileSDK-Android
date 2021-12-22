@@ -731,13 +731,12 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
      */
     @Throws(JSONException::class)
     fun queryWithArgs(querySpec: QuerySpec, pageIndex: Int, vararg whereArgs: String?): JSONArray {
-        if (whereArgs.filterNotNull()
-                .isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart
-        ) {
+        val sanitizedArgs = whereArgs.filterNotNull().toTypedArray()
+        if (sanitizedArgs.isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart) {
             throw SmartStoreException("whereArgs can only be provided for smart queries")
         }
         val resultAsArray = JSONArray()
-        runQuery(resultAsArray, null, querySpec, pageIndex, *whereArgs)
+        runQuery(resultAsArray, null, querySpec, pageIndex, *sanitizedArgs)
         return resultAsArray
     }
 
@@ -775,6 +774,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
         pageIndex: Int,
         vararg whereArgs: String?
     ) {
+        val sanitizedWhereArgs = whereArgs.filterNotNull().toTypedArray()
         val computeResultAsString = resultAsStringBuilder != null
         synchronized(database) {
             val qt = querySpec.queryType
@@ -790,7 +790,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                     database,
                     sql,
                     limit,
-                    *if (querySpec.args != null) querySpec.args else whereArgs
+                    *(querySpec.args ?: sanitizedWhereArgs)
                 )
                 if (computeResultAsString) {
                     resultAsStringBuilder!!.append("[")
@@ -965,7 +965,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
         synchronized(database) {
             val countSql = convertSmartSql(querySpec.countSmartSql)
             return DBHelper.getInstance(database)
-                .countRawCountQuery(database, countSql, *querySpec.args)
+                .countRawCountQuery(database, countSql, *(querySpec.args ?: emptyArray()))
         }
     }
 
@@ -1153,15 +1153,16 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
      */
     @Throws(JSONException::class)
     fun retrieve(soupName: String, vararg soupEntryIds: Long?): JSONArray {
+        val sanitizedSoupEntryIds = soupEntryIds.filterNotNull().toTypedArray()
         synchronized(database) {
             val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
             val result = JSONArray()
             if (usesExternalStorage(soupName)) {
-                for (soupEntryId: Long? in soupEntryIds) {
+                for (soupEntryId: Long in sanitizedSoupEntryIds) {
                     val raw = dbOpenHelper.loadSoupBlob(
                         soupTableName,
-                        soupEntryId!!,
+                        soupEntryId,
                         encryptionKey
                     )
                     if (raw != null) {
@@ -1177,7 +1178,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                         arrayOf(SOUP_COL),
                         null,
                         null,
-                        getSoupEntryIdsPredicate(soupEntryIds),
+                        getSoupEntryIdsPredicate(sanitizedSoupEntryIds),
                         null
                     )
                     if (!cursor.moveToFirst()) {
@@ -1444,6 +1445,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
      * @param handleTx
      */
     fun delete(soupName: String, soupEntryIds: Array<out Long?>, handleTx: Boolean) {
+        val sanitizedIds = soupEntryIds.filterNotNull().toTypedArray()
         synchronized(database) {
             val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
                 ?: throw SmartStoreException("Soup: $soupName does not exist")
@@ -1452,17 +1454,17 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
             }
             try {
                 DBHelper.getInstance(database)
-                    .delete(database, soupTableName, getSoupEntryIdsPredicate(soupEntryIds))
+                    .delete(database, soupTableName, getSoupEntryIdsPredicate(sanitizedIds))
                 if (hasFTS(soupName)) {
                     DBHelper.getInstance(database)
                         .delete(
                             database,
                             soupTableName + FTS_SUFFIX,
-                            getRowIdsPredicate(soupEntryIds)
+                            getRowIdsPredicate(sanitizedIds)
                         )
                 }
                 if (usesExternalStorage(soupName)) {
-                    dbOpenHelper.removeSoupBlob(soupTableName, soupEntryIds)
+                    dbOpenHelper.removeSoupBlob(soupTableName, sanitizedIds)
                 }
                 if (handleTx) {
                     database.setTransactionSuccessful()
@@ -1504,7 +1506,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                     convertSmartSql(querySpec.idsSmartSql),
                     querySpec.pageSize
                 )
-                val args = querySpec.args
+                val args = querySpec.args ?: emptyArray()
                 if (usesExternalStorage(soupName)) {
                     // Query list of ids and remove them from external storage
                     var c: Cursor? = null

@@ -31,6 +31,7 @@ import android.text.TextUtils;
 import com.salesforce.androidsdk.smartstore.store.SmartStore.SmartStoreException;
 import com.salesforce.androidsdk.util.JSONObjectHelper;
 
+import org.jetbrains.annotations.Nullable;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -460,6 +461,7 @@ public class QuerySpec {
     /**
      * @return args going with the sql predicate returned by getKeyPredicate
      */
+    @Nullable
     public String[] getArgs() {
         switch(queryType) {
         case exact:
