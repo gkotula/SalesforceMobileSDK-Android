@@ -52,12 +52,11 @@ import java.util.concurrent.Executors
  */
 open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?) {
     // Backing database
-    private val _database: SQLiteDatabase by lazy { dbOpenHelper.getWritableDatabase(encryptionKey) }
     private var hasResumedLongOperations = false
     val database: SQLiteDatabase
         get() {
             return synchronized(this) {
-                val db = _database // force lazy init
+                val db = dbOpenHelper.getWritableDatabase(encryptionKey)
                 if (!hasResumedLongOperations) {
                     hasResumedLongOperations = true
                     resumeLongOperations()
