@@ -66,14 +66,9 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
         }
 
     /**
-     * @return ftsX to be used when creating the virtual table to support full_text queries
+     * ftsX to be used when creating the virtual table to support full_text queries.
+     * The setter should _only_ be used in tests
      */
-    /**
-     * Sets the ftsX to be used when creating the virtual table to support full_text queries
-     * NB: only used in tests
-     * @param ftsExtension
-     */
-    // FTS extension to use
     var ftsExtension = FtsExtension.fts5
 
     // background executor
@@ -165,20 +160,17 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
             )
             if (hasSoup(soupName)) return  // soup already exist - do nothing
 
-            // First get a table name
-            lateinit var soupTableName: String
-            val soupMapValues = ContentValues()
-            soupMapValues.put(SOUP_NAME_COL, soupName)
-
             // Register features from soup spec
-            for (feature: String? in soupSpec.features) {
+            val soupMapValues = ContentValues().apply { put(SOUP_NAME_COL, soupName) }
+            soupSpec.features.forEach { feature: String? ->
                 soupMapValues.put(feature, 1)
             }
+
             try {
                 database.beginTransaction()
                 val soupId =
                     DBHelper.getInstance(database).insert(database, SOUP_ATTRS_TABLE, soupMapValues)
-                soupTableName = getSoupTableName(soupId)
+                val soupTableName = getSoupTableName(soupId)
 
                 // Do the rest - create table / indexes
                 registerSoupUsingTableName(soupSpec, indexSpecs, soupTableName)
@@ -234,44 +226,40 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
         // Prepare SQL for creating soup table and its indices
         val createTableStmt = StringBuilder() // to create new soup table
         val createFtsStmt = StringBuilder() // to create fts table
-        val createIndexStmts: MutableList<String> =
-            ArrayList() // to create indices on new soup table
-        val soupIndexMapInserts: MutableList<ContentValues> =
-            ArrayList() // to be inserted in soup index map table
+        val createIndexStmts = mutableListOf<String>() // to create indices on new soup table
+        val soupIndexMapInserts =
+            mutableListOf<ContentValues>() // to be inserted in soup index map table
         val indexSpecsToCache = arrayOfNulls<IndexSpec>(indexSpecs.size)
         val columnsForFts: MutableList<String?> = ArrayList()
         val soupName = soupSpec.soupName
-        createTableStmt.append("CREATE TABLE ").append(soupTableName).append(" (")
-            .append(ID_COL).append(" INTEGER PRIMARY KEY AUTOINCREMENT")
+
+        createTableStmt
+            .append("CREATE TABLE $soupTableName ($ID_COL INTEGER PRIMARY KEY AUTOINCREMENT")
+
         if (!usesExternalStorage(soupName)) {
             // If external storage is used, do not add column for soup in the db since it will be empty.
-            createTableStmt.append(", ").append(SOUP_COL).append(" TEXT")
+            createTableStmt.append(", $SOUP_COL TEXT")
         }
-        createTableStmt.append(", ").append(CREATED_COL).append(" INTEGER")
-            .append(", ").append(LAST_MODIFIED_COL).append(" INTEGER")
+        createTableStmt.append(", $CREATED_COL INTEGER, $LAST_MODIFIED_COL INTEGER")
+
         val createIndexFormat = "CREATE INDEX %s_%s_idx on %s ( %s )"
-        for (col in arrayOf(CREATED_COL, LAST_MODIFIED_COL)) {
+        listOf(CREATED_COL, LAST_MODIFIED_COL).forEach { col ->
             createIndexStmts.add(
-                String.format(
-                    createIndexFormat,
-                    soupTableName,
-                    col,
-                    soupTableName,
-                    col
-                )
+                String.format(createIndexFormat, soupTableName, col, soupTableName, col)
             )
         }
+
         indexSpecs.forEachIndexed { i, indexSpec ->
             // Column name or expression the db index is on
-            var columnName = soupTableName + "_" + i
+            var columnName = "${soupTableName}_$i"
             if (TypeGroup.value_indexed_with_json_extract.isMember(indexSpec.type)) {
-                columnName = "json_extract(" + SOUP_COL + ", '$." + indexSpec.path + "')"
+                columnName = "json_extract($SOUP_COL, '$.${indexSpec.path}')"
             }
 
             // for create table
             if (TypeGroup.value_extracted_to_column.isMember(indexSpec.type)) {
                 val columnType = indexSpec.type.columnType
-                createTableStmt.append(", ").append(columnName).append(" ").append(columnType)
+                createTableStmt.append(", $columnName $columnType")
             }
 
             // for fts
@@ -280,11 +268,12 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
             }
 
             // for insert
-            val values = ContentValues()
-            values.put(SOUP_NAME_COL, soupName)
-            values.put(PATH_COL, indexSpec.path)
-            values.put(COLUMN_NAME_COL, columnName)
-            values.put(COLUMN_TYPE_COL, indexSpec.type.toString())
+            val values = ContentValues().apply {
+                put(SOUP_NAME_COL, soupName)
+                put(PATH_COL, indexSpec.path)
+                put(COLUMN_NAME_COL, columnName)
+                put(COLUMN_TYPE_COL, indexSpec.type.toString())
+            }
             soupIndexMapInserts.add(values)
 
             // for create index
@@ -292,7 +281,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                 String.format(
                     createIndexFormat,
                     soupTableName,
-                    "" + i,
+                    i,
                     soupTableName,
                     columnName
                 )
@@ -305,14 +294,9 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
 
         // fts
         if (columnsForFts.size > 0) {
+            val ftsColumns = TextUtils.join(",", columnsForFts)
             createFtsStmt.append(
-                String.format(
-                    "CREATE VIRTUAL TABLE %s%s USING %s(%s)",
-                    soupTableName,
-                    FTS_SUFFIX,
-                    ftsExtension,
-                    TextUtils.join(",", columnsForFts)
-                )
+                "CREATE VIRTUAL TABLE $soupTableName$FTS_SUFFIX USING $ftsExtension($ftsColumns)"
             )
         }
 
@@ -322,12 +306,12 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
         if (columnsForFts.size > 0) {
             db.execSQL(createFtsStmt.toString())
         }
-        for (createIndexStmt in createIndexStmts) {
+        createIndexStmts.forEach { createIndexStmt ->
             db.execSQL(createIndexStmt)
         }
         try {
             db.beginTransaction()
-            for (values in soupIndexMapInserts) {
+            soupIndexMapInserts.forEach { values ->
                 DBHelper.getInstance(db).insert(db, SOUP_INDEX_MAP_TABLE, values)
             }
             if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
@@ -365,7 +349,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      */
     val longOperations: Array<LongOperation>
         get() {
-            val longOperations: MutableList<LongOperation> = ArrayList()
+            val longOperations = mutableListOf<LongOperation>()
             synchronized(database) {
                 var cursor: Cursor? = null
                 try {
@@ -456,14 +440,14 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
 
             // Getting index specs from indexPaths skipping json1 index specs
             val mapAllSpecs = IndexSpec.mapForIndexSpecs(getSoupIndexSpecs(soupName))
-            val indexSpecsList: MutableList<IndexSpec> = ArrayList()
-            for (indexPath: String in indexPaths) {
-                if (mapAllSpecs.containsKey(indexPath)) {
-                    val indexSpec = mapAllSpecs[indexPath]
-                    if (TypeGroup.value_extracted_to_column.isMember(indexSpec!!.type)) {
+            val indexSpecsList = mutableListOf<IndexSpec>()
+
+            indexPaths.forEach { indexPath: String ->
+                mapAllSpecs[indexPath]?.let { indexSpec ->
+                    if (TypeGroup.value_extracted_to_column.isMember(indexSpec.type)) {
                         indexSpecsList.add(indexSpec)
                     }
-                } else {
+                } ?: run {
                     SmartStoreLogger.w(
                         TAG,
                         "Can not re-index $indexPath - it does not have an index"
@@ -632,27 +616,32 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
     fun dropSoup(soupName: String) {
         synchronized(database) {
             val soupTableName = DBHelper.getInstance(database).getSoupTableName(database, soupName)
-            if (soupTableName != null) {
-                database.execSQL("DROP TABLE IF EXISTS $soupTableName")
-                if (hasFTS(soupName)) {
-                    database.execSQL("DROP TABLE IF EXISTS " + soupTableName + FTS_SUFFIX)
-                }
-                try {
-                    database.beginTransaction()
-                    DBHelper.getInstance(database)
-                        .delete(database, SOUP_ATTRS_TABLE, SOUP_NAME_PREDICATE, soupName)
-                    DBHelper.getInstance(database)
-                        .delete(database, SOUP_INDEX_MAP_TABLE, SOUP_NAME_PREDICATE, soupName)
-                    if (dbOpenHelper is DBOpenHelper) {
-                        dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
-                    }
-                    database.setTransactionSuccessful()
+                ?: return
 
-                    // Remove from cache
-                    DBHelper.getInstance(database).removeFromCache(soupName)
-                } finally {
-                    database.endTransaction()
+            database.execSQL("DROP TABLE IF EXISTS $soupTableName")
+            if (hasFTS(soupName)) {
+                database.execSQL("DROP TABLE IF EXISTS $soupTableName$FTS_SUFFIX")
+            }
+
+            try {
+                database.beginTransaction()
+
+                DBHelper.getInstance(database)
+                    .delete(database, SOUP_ATTRS_TABLE, SOUP_NAME_PREDICATE, soupName)
+
+                DBHelper.getInstance(database)
+                    .delete(database, SOUP_INDEX_MAP_TABLE, SOUP_NAME_PREDICATE, soupName)
+
+                if (dbOpenHelper is DBOpenHelper) {
+                    dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
                 }
+
+                database.setTransactionSuccessful()
+
+                // Remove from cache
+                DBHelper.getInstance(database).removeFromCache(soupName)
+            } finally {
+                database.endTransaction()
             }
         }
     }
@@ -675,7 +664,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
     val allSoupNames: List<String>
         get() {
             synchronized(database) {
-                val soupNames: MutableList<String> = ArrayList()
+                val soupNames = mutableListOf<String>()
                 var cursor: Cursor? = null
                 try {
                     cursor = DBHelper.getInstance(database).query(
@@ -760,15 +749,6 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
             // shouldn't happen since we call runQuery with a string builder
             throw SmartStoreException("Unexpected json exception", e)
         }
-    }
-
-    private fun runQueryForJsonArrayResult(
-        result: JSONArray,
-        querySpec: QuerySpec,
-        pageIndex: Int,
-        vararg whereArgs: String?
-    ) {
-        TODO("runQueryForJsonArrayResult")
     }
 
     @Throws(JSONException::class)
@@ -1030,6 +1010,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                 // Adding fields to soup element
                 soupElt.put(SOUP_ENTRY_ID, soupEntryId)
                 soupElt.put(SOUP_LAST_MODIFIED_DATE, now)
+
                 val contentValues = ContentValues()
                 contentValues.put(ID_COL, soupEntryId)
                 contentValues.put(CREATED_COL, now)
@@ -1279,7 +1260,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                     soupTableName,
                     contentValues,
                     ID_PREDICATE,
-                    soupEntryId.toString() + ""
+                    soupEntryId.toString()
                 ) == 1
 
                 // Fts
@@ -1369,7 +1350,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
     ): JSONObject? {
         synchronized(database) {
             var entryId: Long = -1
-            if ((externalIdPath == SOUP_ENTRY_ID)) {
+            if (externalIdPath == SOUP_ENTRY_ID) {
                 if (soupElt.has(SOUP_ENTRY_ID)) {
                     entryId = soupElt.getLong(SOUP_ENTRY_ID)
                 }
@@ -1377,14 +1358,11 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                 val externalIdObj = project(soupElt, externalIdPath)
                 if (externalIdObj != null) {
                     entryId =
-                        lookupSoupEntryId(soupName, externalIdPath, externalIdObj.toString() + "")
+                        lookupSoupEntryId(soupName, externalIdPath, externalIdObj.toString())
                 } else {
                     // Cannot have empty values for user-defined external ID upsert.
                     throw SmartStoreException(
-                        String.format(
-                            "For upsert with external ID path '%s', value cannot be empty for any entries.",
-                            externalIdPath
-                        )
+                        "For upsert with external ID path '$externalIdPath', value cannot be empty for any entries."
                     )
                 }
             }
@@ -1428,11 +1406,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                 )
                 if (cursor.getCount() > 1) {
                     throw SmartStoreException(
-                        String.format(
-                            "There are more than one soup elements where %s is %s",
-                            fieldPath,
-                            fieldValue
-                        )
+                        "There are more than one soup elements where $fieldPath is $fieldValue",
                     )
                 }
                 return if (cursor.moveToFirst()) {
@@ -1517,12 +1491,8 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                 database.beginTransaction()
             }
             try {
-                val subQuerySql = String.format(
-                    "SELECT %s FROM (%s) LIMIT %d",
-                    ID_COL,
-                    convertSmartSql(querySpec.idsSmartSql),
-                    querySpec.pageSize
-                )
+                val idSql = convertSmartSql(querySpec.idsSmartSql)
+                val subQuerySql = "SELECT $ID_COL FROM ($idSql) LIMIT ${querySpec.pageSize}"
                 val args = querySpec.args ?: emptyArray()
                 if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                     // Query list of ids and remove them from external storage
@@ -1546,16 +1516,17 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                             dbOpenHelper.removeSoupBlob(soupTableName, ids)
                         }
                     } finally {
-                        c?.close()
+                        safeClose(c)
                     }
                 }
                 DBHelper.getInstance(database)
                     .delete(database, soupTableName, buildInStatement(ID_COL, subQuerySql), *args)
                 if (hasFTS(soupName)) {
                     DBHelper.getInstance(database).delete(
-                        database, soupTableName + FTS_SUFFIX, buildInStatement(
-                            ROWID_COL, subQuerySql
-                        ), *args
+                        database,
+                        "$soupTableName$FTS_SUFFIX",
+                        buildInStatement(ROWID_COL, subQuerySql),
+                        *args
                     )
                 }
                 if (handleTx) {
@@ -1588,9 +1559,8 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      * @param inPredicate
      * @return in statement
      */
-    private fun buildInStatement(col: String, inPredicate: String): String {
-        return String.format("%s IN (%s)", col, inPredicate)
-    }
+    private fun buildInStatement(col: String, inPredicate: String): String =
+        "$col IN ($inPredicate)"
 
     /**
      * @param cursor
@@ -1603,8 +1573,11 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      * Enum for column type
      */
     enum class Type(val columnType: String?) {
-        string("TEXT"), integer("INTEGER"), floating("REAL"), full_text("TEXT"), json1(null);
-
+        string("TEXT"),
+        integer("INTEGER"),
+        floating("REAL"),
+        full_text("TEXT"),
+        json1(null);
     }
 
     /**
@@ -1612,19 +1585,19 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      */
     enum class TypeGroup {
         value_extracted_to_column {
-            override fun isMember(type: Type): Boolean {
-                return type == Type.string || type == Type.integer || type == Type.floating || type == Type.full_text
-            }
+            override fun isMember(type: Type): Boolean =
+                type == Type.string
+                        || type == Type.integer
+                        || type == Type.floating
+                        || type == Type.full_text
         },
         value_extracted_to_fts_column {
-            override fun isMember(type: Type): Boolean {
-                return type == Type.full_text
-            }
+            override fun isMember(type: Type): Boolean =
+                type == Type.full_text
         },
         value_indexed_with_json_extract {
-            override fun isMember(type: Type): Boolean {
-                return type == Type.json1
-            }
+            override fun isMember(type: Type): Boolean =
+                type == Type.json1
         };
 
         abstract fun isMember(type: Type): Boolean
@@ -1634,7 +1607,8 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      * Enum for fts extensions
      */
     enum class FtsExtension {
-        fts4, fts5
+        fts4,
+        fts5
     }
 
     /**
@@ -1660,7 +1634,8 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
     @Deprecated(message = "We are removing external storage and soup spec in 11.0")
     fun usesExternalStorage(soupName: String?): Boolean {
         synchronized(database) {
-            return DBHelper.getInstance(database).getFeatures(database, soupName)
+            return DBHelper.getInstance(database)
+                .getFeatures(database, soupName)
                 .contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)
         }
     }
@@ -1756,6 +1731,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * @param newKey New encryption key.
          */
         @Synchronized
+        @JvmStatic
         fun changeKey(db: SQLiteDatabase, oldKey: String?, newKey: String?) {
             synchronized(db) {
                 if (!TextUtils.isEmpty(newKey)) {
@@ -1772,49 +1748,43 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          *
          * @param db
          */
+        @JvmStatic
         fun createMetaTables(db: SQLiteDatabase) {
             synchronized(db) {
 
                 // Create soup_index_map table
-                var sb = StringBuilder()
-                sb.append("CREATE TABLE ").append(SOUP_INDEX_MAP_TABLE).append(" (")
-                    .append(SOUP_NAME_COL).append(" TEXT")
-                    .append(",").append(PATH_COL).append(" TEXT")
-                    .append(",").append(COLUMN_NAME_COL).append(" TEXT")
-                    .append(",").append(COLUMN_TYPE_COL).append(" TEXT")
-                    .append(")")
-                db.execSQL(sb.toString())
+                var sql = buildString {
+                    append("CREATE TABLE $SOUP_INDEX_MAP_TABLE (")
+                    append("$SOUP_NAME_COL TEXT")
+                    append(", $PATH_COL TEXT")
+                    append(", $COLUMN_NAME_COL TEXT")
+                    append(", $COLUMN_TYPE_COL TEXT")
+                    append(")")
+                }
+                db.execSQL(sql)
                 // Add index on soup_name column
                 db.execSQL(
-                    String.format(
-                        "CREATE INDEX %s on %s ( %s )",
-                        SOUP_INDEX_MAP_TABLE + "_0",
-                        SOUP_INDEX_MAP_TABLE,
-                        SOUP_NAME_COL
-                    )
+                    "CREATE INDEX ${SOUP_INDEX_MAP_TABLE}_0 on $SOUP_INDEX_MAP_TABLE ( $SOUP_NAME_COL )"
                 )
 
                 // Create soup_names table
                 // The table name for the soup will simply be table_<soupId>
-                sb = StringBuilder()
-                sb.append("CREATE TABLE ").append(SOUP_ATTRS_TABLE).append(" (")
-                    .append(ID_COL).append(" INTEGER PRIMARY KEY AUTOINCREMENT")
-                    .append(",").append(SOUP_NAME_COL).append(" TEXT")
+                sql = buildString {
+                    append("CREATE TABLE $SOUP_ATTRS_TABLE (")
+                    append("$ID_COL INTEGER PRIMARY KEY AUTOINCREMENT")
+                    append(", $SOUP_NAME_COL TEXT")
 
-                // Create columns for all possible soup features
-                for (feature: String? in SoupSpec.ALL_FEATURES) {
-                    sb.append(",").append(feature).append(" INTEGER DEFAULT 0")
+                    SoupSpec.ALL_FEATURES.forEach { feature ->
+                        append(", $feature INTEGER DEFAULT 0")
+                    }
+
+                    append(")")
                 }
-                sb.append(")")
-                db.execSQL(sb.toString())
+
+                db.execSQL(sql)
                 // Add index on soup_name column
                 db.execSQL(
-                    String.format(
-                        "CREATE INDEX %s on %s ( %s )",
-                        SOUP_ATTRS_TABLE + "_0",
-                        SOUP_ATTRS_TABLE,
-                        SOUP_NAME_COL
-                    )
+                    "CREATE INDEX ${SOUP_ATTRS_TABLE}_0 on $SOUP_ATTRS_TABLE ( $SOUP_NAME_COL )"
                 )
 
                 // Create alter_soup_status table
@@ -1826,19 +1796,20 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * Create long_operations_status table
          * @param db
          */
+        @JvmStatic
         fun createLongOperationsStatusTable(db: SQLiteDatabase) {
             synchronized(db) {
-                val sb = StringBuilder()
-                sb.append("CREATE TABLE IF NOT EXISTS ").append(LONG_OPERATIONS_STATUS_TABLE)
-                    .append(" (")
-                    .append(ID_COL).append(" INTEGER PRIMARY KEY AUTOINCREMENT")
-                    .append(",").append(TYPE_COL).append(" TEXT")
-                    .append(",").append(DETAILS_COL).append(" TEXT")
-                    .append(",").append(STATUS_COL).append(" TEXT")
-                    .append(", ").append(CREATED_COL).append(" INTEGER")
-                    .append(", ").append(LAST_MODIFIED_COL).append(" INTEGER")
-                    .append(")")
-                db.execSQL(sb.toString())
+                val sql = buildString {
+                    append("CREATE TABLE IF NOT EXISTS $LONG_OPERATIONS_STATUS_TABLE (")
+                    append("$ID_COL INTEGER PRIMARY KEY AUTOINCREMENT")
+                    append(", $TYPE_COL TEXT")
+                    append(", $DETAILS_COL TEXT")
+                    append(", $STATUS_COL TEXT")
+                    append(", $CREATED_COL INTEGER")
+                    append(", $LAST_MODIFIED_COL INTEGER")
+                    append(")")
+                }
+                db.execSQL(sql)
             }
         }
 
@@ -1846,9 +1817,8 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * @param soupId
          * @return
          */
-        fun getSoupTableName(soupId: Long): String {
-            return "TABLE_$soupId"
-        }
+        @JvmStatic
+        fun getSoupTableName(soupId: Long): String = "TABLE_$soupId"
 
         /**
          * @param soup
@@ -1864,6 +1834,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * projectIntoJson(json, "a.b.d") = [[{"e":1}, {"e":2}], [{"e":3}, {"e":4}]]         // new in 4.1
          * projectIntoJson(json, "a.b.d.e") = [[1, 2], [3, 4]]                               // new in 4.1
          */
+        @JvmStatic
         fun project(soup: JSONObject?, path: String?): Any? {
             val result = projectReturningNULLObject(soup, path)
             return if (result === JSONObject.NULL) null else result
@@ -1875,6 +1846,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * @param path
          * @return
          */
+        @JvmStatic
         fun projectReturningNULLObject(soup: JSONObject?, path: String?): Any? {
             if (soup == null) {
                 return null
@@ -1897,10 +1869,9 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
                     val dictVal = jsonObj.opt(pathElement)
                     result = projectRecursive(dictVal, pathElements, index + 1)
                 } else if (jsonObj is JSONArray) {
-                    val jsonArr = jsonObj
                     result = JSONArray()
-                    for (i in 0 until jsonArr.length()) {
-                        val arrayElt = jsonArr.opt(i)
+                    for (i in 0 until jsonObj.length()) {
+                        val arrayElt = jsonObj.opt(i)
                         val resultPart = projectRecursive(arrayElt, pathElements, index)
                         if (resultPart != null) {
                             result.put(resultPart)
@@ -1922,6 +1893,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
          * @param newName New name of the table to be renamed, null if table should not be renamed.
          * @param columns Columns to add. Null if no new columns should be added.
          */
+        @JvmStatic
         fun updateTableNameAndAddColumns(
             db: SQLiteDatabase,
             oldName: String?,
