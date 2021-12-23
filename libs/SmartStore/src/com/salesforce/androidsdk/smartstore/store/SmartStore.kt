@@ -34,6 +34,7 @@ import com.salesforce.androidsdk.app.SalesforceSDKManager
 import com.salesforce.androidsdk.smartstore.store.LongOperation.LongOperationType
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger
 import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -49,7 +50,7 @@ import java.util.concurrent.Executors
  * SmartStore is inspired by the Apple Newton OS Soup/Store model.
  * The main challenge here is how to effectively store documents with dynamic fields, and still allow indexing and searching.
  */
-open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?) {
+open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?) {
     // Backing database
     private val _database: SQLiteDatabase by lazy { dbOpenHelper.getWritableDatabase(encryptionKey) }
     private var hasResumedLongOperations = false
@@ -101,7 +102,9 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
         get() {
             var size = File(database.path).length()
                 .toInt() // XXX That cast will be trouble if the file is more than 2GB
-            size += dbOpenHelper.getSizeOfDir(null)
+            if (dbOpenHelper is DBOpenHelper) {
+                size += dbOpenHelper.getSizeOfDir(null)
+            }
             return size
         }
 
@@ -328,7 +331,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
             for (values in soupIndexMapInserts) {
                 DBHelper.getInstance(db).insert(db, SOUP_INDEX_MAP_TABLE, values)
             }
-            if (usesExternalStorage(soupName)) {
+            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                 dbOpenHelper.createExternalBlobsDirectory(soupTableName)
             }
             db.setTransactionSuccessful()
@@ -497,7 +500,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                         val soupEntryId = cursor.getString(0)
                         try {
                             val soupElt: JSONObject =
-                                if (usesExternalStorage(soupName)) {
+                                if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                                     dbOpenHelper.loadSoupBlob(
                                         soupTableName,
                                         soupEntryId.toLong(),
@@ -598,7 +601,9 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                     DBHelper.getInstance(database)
                         .delete(database, soupTableName + FTS_SUFFIX, null)
                 }
-                dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
+                if (dbOpenHelper is DBOpenHelper) {
+                    dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
+                }
             } finally {
                 database.setTransactionSuccessful()
                 database.endTransaction()
@@ -639,7 +644,9 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                         .delete(database, SOUP_ATTRS_TABLE, SOUP_NAME_PREDICATE, soupName)
                     DBHelper.getInstance(database)
                         .delete(database, SOUP_INDEX_MAP_TABLE, SOUP_NAME_PREDICATE, soupName)
-                    dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
+                    if (dbOpenHelper is DBOpenHelper) {
+                        dbOpenHelper.removeExternalBlobsDirectory(soupTableName)
+                    }
                     database.setTransactionSuccessful()
 
                     // Remove from cache
@@ -820,7 +827,10 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                                     val soupEntryId =
                                         cursor.getLong(cursor.getColumnIndex(SOUP_ENTRY_ID))
 
-                                    dbOpenHelper.loadSoupBlobAsString(
+                                    /* ⚠️ The following cast is unsafe!  This cast was unsafe to
+                                     * begin with in the original Java code, but it was left in as
+                                     * part of the Kotlin conversion to preserve behavior. */
+                                    (dbOpenHelper as DBOpenHelper).loadSoupBlobAsString(
                                         soupTableName,
                                         soupEntryId,
                                         encryptionKey
@@ -877,7 +887,10 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                     val soupEntryId = cursor.getLong(i + 1)
                     if (computeResultAsString) {
                         resultAsStringBuilder!!.append(
-                            (dbOpenHelper as DBOpenHelper?)!!.loadSoupBlobAsString(
+                            /* ⚠️ The following cast is unsafe!  This cast was unsafe to
+                             * begin with in the original Java code, but it was left in as
+                             * part of the Kotlin conversion to preserve behavior. */
+                            (dbOpenHelper as DBOpenHelper).loadSoupBlobAsString(
                                 soupTableName,
                                 soupEntryId,
                                 encryptionKey
@@ -885,7 +898,10 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                         )
                     } else {
                         resultAsArray!!.put(
-                            (dbOpenHelper as DBOpenHelper?)!!.loadSoupBlob(
+                            /* ⚠️ The following cast is unsafe!  This cast was unsafe to
+                             * begin with in the original Java code, but it was left in as
+                             * part of the Kotlin conversion to preserve behavior. */
+                            (dbOpenHelper as DBOpenHelper).loadSoupBlob(
                                 soupTableName,
                                 soupEntryId,
                                 encryptionKey
@@ -1050,7 +1066,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                 }
 
                 // Add to external storage if applicable
-                if (success && usesExternalStorage(soupName)) {
+                if (success && usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                     success = dbOpenHelper.saveSoupBlob(
                         soupTableName,
                         soupEntryId,
@@ -1159,7 +1175,10 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
             val result = JSONArray()
             if (usesExternalStorage(soupName)) {
                 for (soupEntryId: Long in sanitizedSoupEntryIds) {
-                    val raw = dbOpenHelper.loadSoupBlob(
+                    /* ⚠️ The following cast is unsafe!  This cast was unsafe to
+                     * begin with in the original Java code, but it was left in as
+                     * part of the Kotlin conversion to preserve behavior. */
+                    val raw = (dbOpenHelper as DBOpenHelper).loadSoupBlob(
                         soupTableName,
                         soupEntryId,
                         encryptionKey
@@ -1284,7 +1303,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                 }
 
                 // Add to external storage if applicable
-                if (success && usesExternalStorage(soupName)) {
+                if (success && usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                     success = dbOpenHelper.saveSoupBlob(
                         soupTableName,
                         soupEntryId,
@@ -1462,7 +1481,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                             getRowIdsPredicate(sanitizedIds)
                         )
                 }
-                if (usesExternalStorage(soupName)) {
+                if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                     dbOpenHelper.removeSoupBlob(soupTableName, sanitizedIds)
                 }
                 if (handleTx) {
@@ -1506,7 +1525,7 @@ open class SmartStore(val dbOpenHelper: DBOpenHelper, val encryptionKey: String?
                     querySpec.pageSize
                 )
                 val args = querySpec.args ?: emptyArray()
-                if (usesExternalStorage(soupName)) {
+                if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
                     // Query list of ids and remove them from external storage
                     var c: Cursor? = null
                     try {
