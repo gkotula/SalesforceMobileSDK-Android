@@ -50,7 +50,10 @@ import java.util.concurrent.Executors
  * SmartStore is inspired by the Apple Newton OS Soup/Store model.
  * The main challenge here is how to effectively store documents with dynamic fields, and still allow indexing and searching.
  */
-open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: String?) {
+open class SmartStore(
+    @JvmField val dbOpenHelper: SQLiteOpenHelper,
+    @JvmField val encryptionKey: String?
+) {
     // Backing database
     private var hasResumedLongOperations = false
     open val database: SQLiteDatabase
@@ -724,7 +727,11 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      * @throws JSONException
      */
     @Throws(JSONException::class)
-    open fun queryWithArgs(querySpec: QuerySpec, pageIndex: Int, vararg whereArgs: String?): JSONArray {
+    open fun queryWithArgs(
+        querySpec: QuerySpec,
+        pageIndex: Int,
+        vararg whereArgs: String?
+    ): JSONArray {
         val sanitizedArgs = whereArgs.filterNotNull().toTypedArray()
         if (sanitizedArgs.isNotEmpty() && querySpec.queryType != QuerySpec.QueryType.smart) {
             throw SmartStoreException("whereArgs can only be provided for smart queries")
@@ -1661,8 +1668,7 @@ open class SmartStore(val dbOpenHelper: SQLiteOpenHelper, val encryptionKey: Str
      *
      * @return SQLCipher version
      */
-    open val sqlCipherVersion: String
-        get() = TextUtils.join(" ", queryPragma("cipher_version"))
+    open fun getSQLCipherVersion(): String = TextUtils.join(" ", queryPragma("cipher_version"))
 
     private fun queryPragma(pragma: String): List<String?> {
         val results = ArrayList<String?>()

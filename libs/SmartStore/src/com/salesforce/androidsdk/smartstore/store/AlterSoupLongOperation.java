@@ -586,11 +586,11 @@ public class AlterSoupLongOperation extends LongOperation {
 					} while (c.moveToNext());
 
 					for (long id : ids) {
-                        String entry = ((DBOpenHelper) store.getDbOpenHelper()).loadSoupBlobAsString(soupTableName, id, store.getEncryptionKey());
+                        String entry = ((DBOpenHelper) store.dbOpenHelper).loadSoupBlobAsString(soupTableName, id, store.encryptionKey);
                         ContentValues contentValues = new ContentValues();
                         contentValues.put(SmartStore.SOUP_COL, entry);
                         DBHelper.getInstance(db).update(db, soupTableName, contentValues, SmartStore.ID_PREDICATE, id + "");
-						((DBOpenHelper) store.getDbOpenHelper()).removeSoupBlob(soupTableName, new Long[] {id});
+						((DBOpenHelper) store.dbOpenHelper).removeSoupBlob(soupTableName, new Long[] {id});
 					}
 				}
 			} finally {
@@ -607,7 +607,7 @@ public class AlterSoupLongOperation extends LongOperation {
 					do {
 						long id = c.getLong(0);
 						String entry = c.getString(1);
-						((DBOpenHelper) store.getDbOpenHelper()).saveSoupBlobFromString(soupTableName, id, entry, store.getEncryptionKey());
+						((DBOpenHelper) store.dbOpenHelper).saveSoupBlobFromString(soupTableName, id, entry, store.encryptionKey);
 					} while (c.moveToNext());
 				}
 			} finally {

@@ -49,7 +49,7 @@ import org.junit.Before;
 public abstract class SmartStoreTestCase {
 
 	protected Context targetContext;
-	protected DBOpenHelper dbOpenHelper;
+	protected SQLiteOpenHelper dbOpenHelper;
 	protected SmartStore store;
 	protected DBHelper dbHelper;
 

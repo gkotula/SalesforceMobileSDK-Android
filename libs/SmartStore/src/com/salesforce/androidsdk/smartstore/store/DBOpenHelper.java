@@ -213,7 +213,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * manage locking at our level anyway.
 		 */
 		db.setLockingEnabled(false);
-		SmartStore.Companion.createMetaTables(db);
+		SmartStore.createMetaTables(db);
 	}
 
 	@Override
@@ -228,12 +228,6 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * manage locking at our level anyway.
 		 */
 		db.setLockingEnabled(false);
-	}
-
-	@Override
-	public void onOpen(SQLiteDatabase db) {
-		// (new SmartStore(db)).resumeLongOperations();
-		// (new SmartStore(this, SmartStoreSDKManager.getEncryptionKey())).resumeLongOperations();
 	}
 
 	/**
@@ -633,10 +627,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	public boolean removeSoupBlob(String soupTableName, Long[] soupEntryIds) {
 		File file;
 		boolean success = true;
-		for (Long soupEntryId : soupEntryIds) {
-			if (soupEntryId == null) {
-				continue;
-			}
+		for (long soupEntryId : soupEntryIds) {
 			file = getSoupBlobFile(soupTableName, soupEntryId);
 			success &= file.delete();
 		}

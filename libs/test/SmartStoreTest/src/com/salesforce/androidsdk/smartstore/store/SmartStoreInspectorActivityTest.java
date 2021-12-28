@@ -221,7 +221,7 @@ public class SmartStoreInspectorActivityTest {
 	}
 
 	private void createStore() {
-		final DBOpenHelper dbOpenHelper = DBOpenHelper.getOpenHelper(targetContext, null);
+		final SQLiteOpenHelper dbOpenHelper = DBOpenHelper.getOpenHelper(targetContext, null);
 		DBHelper.getInstance(dbOpenHelper.getWritableDatabase("")).clearMemoryCache();
 		store = new SmartStore(dbOpenHelper, "");
 		store.dropAllSoups();

@@ -185,7 +185,7 @@ public class BatchSyncUpTarget extends SyncUpTarget implements AdvancedSyncUpTar
             return null; // nothing to do
         }
 
-        String objectType = (String) SmartStore.Companion.project(record, Constants.SOBJECT_TYPE);
+        String objectType = (String) SmartStore.project(record, Constants.SOBJECT_TYPE);
         String id = record.getString(getIdFieldName());
 
         // Delete case
