@@ -30,13 +30,15 @@ import android.app.Activity;
 import android.content.IntentFilter;
 import android.view.KeyEvent;
 
+import androidx.annotation.MainThread;
+
 import com.salesforce.androidsdk.accounts.UserAccountManager;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.rest.ClientManager;
 import com.salesforce.androidsdk.rest.RestClient;
-import com.salesforce.androidsdk.security.ScreenLockManager;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.LogoutCompleteReceiver;
+import com.salesforce.androidsdk.util.SalesforceSDKLogger;
 import com.salesforce.androidsdk.util.UserSwitchReceiver;
 
 /**
@@ -46,9 +48,9 @@ import com.salesforce.androidsdk.util.UserSwitchReceiver;
 public class SalesforceActivityDelegate {
 
     private final Activity activity;
-    private ScreenLockManager screenLockManager;
     private UserSwitchReceiver userSwitchReceiver;
     private LogoutCompleteReceiver logoutCompleteReceiver;
+    private boolean hasLaunchedLoginFlowFromPeekRestClientFailure = false;
 
 
     public SalesforceActivityDelegate(Activity activity) {
@@ -56,7 +58,6 @@ public class SalesforceActivityDelegate {
     }
 
     public void onCreate() {
-        screenLockManager = SalesforceSDKManager.getInstance().getScreenLockManager();
         userSwitchReceiver = new ActivityUserSwitchReceiver();
         activity.registerReceiver(userSwitchReceiver, new IntentFilter(UserAccountManager.USER_SWITCH_INTENT_ACTION));
         logoutCompleteReceiver = new ActivityLogoutCompleteReceiver();
@@ -67,41 +68,56 @@ public class SalesforceActivityDelegate {
     }
 
     /**
-     * Brings up ScreenLock if needed
-     * Build RestClient if requested and then calls activity.onResume(restClient)
-     * Otherwise calls activity.onResume(null)
+     * If {@code buildRestClient} is false, this method simply calls this Activity's
+     * {@link SalesforceActivityInterface#onResume(RestClient)} with {@code null}.
+     * <p>
+     * If {@code buildRestClient = true}, this attempts to build an authenticated {@link RestClient} for
+     * the current active user, launching the login flow if building it fails. Once the login flow
+     * has succeeded and this method is called again during your Activity's {@link Activity#onResume()},
+     * the {@link RestClient} will be built and your Activity's {@link SalesforceActivityInterface#onResume(RestClient)}
+     * method will be called with the authenticated {@link RestClient}.
+     * <p>
+     * If the login flow fails or the user otherwise leaves the flow before successfully authenticating,
+     * the second call to this method with {@code buildRestClient = true} from {@link Activity#onResume()}
+     * will automatically start the logout process, restarting the app back to the Main Activity if
+     * no other user is logged in.
      *
-     * @param buildRestClient
+     * @param buildRestClient True if you want the delegate to try building the authenticated {@link RestClient} (possibly kicking off the login flow to do so), false otherwise.
      */
+    @MainThread
     public void onResume(boolean buildRestClient) {
-        // Brings up the ScreenLock if needed.
         if (buildRestClient) {
-            // Gets login options.
-            final String accountType = SalesforceSDKManager.getInstance().getAccountType();
-            final ClientManager.LoginOptions loginOptions = SalesforceSDKManager.getInstance().getLoginOptions();
+            // Don't use SalesforceSDKManager.getInstance().getClientManager() because that does not
+            // respect the current shouldLogoutWhenTokenRevoked flag.
+            final SalesforceSDKManager mgr = SalesforceSDKManager.getInstance();
+            final ClientManager cm = new ClientManager(
+                    mgr.getAppContext(),
+                    mgr.getAccountType(),
+                    mgr.getLoginOptions(),
+                    mgr.shouldLogoutWhenTokenRevoked()
+            );
 
-            // Gets a rest client.
-            new ClientManager(
-                    SalesforceSDKManager.getInstance().getAppContext(),
-                    accountType,
-                    loginOptions,
-                    SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked()
-            ).getRestClient(activity, new ClientManager.RestClientCallback() {
+            try {
+                // Try to build the rest client, launching the login flow if building it fails:
+                ((SalesforceActivityInterface) activity).onResume(cm.peekRestClient());
 
-                @Override
-                public void authenticatedRestClient(RestClient client) {
-                    if (client == null) {
-                        SalesforceSDKManager.getInstance().logout(activity);
-                        return;
-                    }
-                    ((SalesforceActivityInterface) activity).onResume(client);
-
-                    // Lets observers know that rendition is complete.
-                    EventsObservable.get().notifyEvent(EventsObservable.EventType.RenditionComplete);
+                // Break out of the logout loop after peekRestClient() success:
+                hasLaunchedLoginFlowFromPeekRestClientFailure = false;
+                EventsObservable.get().notifyEvent(EventsObservable.EventType.RenditionComplete);
+            } catch (final Exception ex) {
+                if (hasLaunchedLoginFlowFromPeekRestClientFailure) {
+                    // We failed to build the RestClient even after launching the login flow. Assume
+                    // this is irrecoverable and just logout:
+                    SalesforceSDKLogger.i(TAG, "Failed second attempt to get the RestClient; now cleaning up and logging out.");
+                    mgr.logout(activity);
+                    return;
                 }
-            });
-        }
-        else {
+
+                SalesforceSDKLogger.i(TAG, "Failed first attempt to get the RestClient; launching login flow.");
+                cm.launchLoginFlow(activity);
+                hasLaunchedLoginFlowFromPeekRestClientFailure = true;
+            }
+        } else {
             ((SalesforceActivityInterface) activity).onResume(null);
         }
     }
@@ -145,4 +161,6 @@ public class SalesforceActivityDelegate {
             ((SalesforceActivityInterface) activity).onLogoutComplete();
         }
     }
+
+    private final static String TAG = SalesforceActivityDelegate.class.getSimpleName();
 }

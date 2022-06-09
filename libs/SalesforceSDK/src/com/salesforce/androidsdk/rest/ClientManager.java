@@ -37,10 +37,11 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Looper;
 
+import androidx.annotation.NonNull;
+
 import com.salesforce.androidsdk.accounts.UserAccount;
 import com.salesforce.androidsdk.accounts.UserAccountManager;
 import com.salesforce.androidsdk.analytics.EventBuilderHelper;
-import com.salesforce.androidsdk.analytics.security.Encryptor;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.auth.AuthenticatorService;
 import com.salesforce.androidsdk.auth.HttpAccess;
@@ -101,19 +102,11 @@ public class ClientManager {
      */
     public void getRestClient(Activity activityContext, RestClientCallback restClientCallback) {
         Account acc = getAccount();
-        Bundle options = loginOptions.asBundle();
 
         // No account found - let's add one - the AuthenticatorService add account method will start the login activity
         if (acc == null) {
             SalesforceSDKLogger.i(TAG, "No account of type " + accountType + " found");
-            final Intent i = new Intent(activityContext,
-                    SalesforceSDKManager.getInstance().getLoginActivityClass());
-            i.setPackage(activityContext.getPackageName());
-            i.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            if (options != null) {
-                i.putExtras(options);
-            }
-            activityContext.startActivity(i);
+            launchLoginFlow(activityContext);
         }
 
         // Account found
@@ -122,6 +115,18 @@ public class ClientManager {
             final RestClient cachedRestClient = peekRestClient();
             restClientCallback.authenticatedRestClient(cachedRestClient);
         }
+    }
+
+    public void launchLoginFlow(@NonNull final Activity curActivity) {
+        final Bundle options = loginOptions.asBundle();
+        final Intent i = new Intent(curActivity,
+                SalesforceSDKManager.getInstance().getLoginActivityClass());
+        i.setPackage(curActivity.getPackageName());
+        i.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (options != null) {
+            i.putExtras(options);
+        }
+        curActivity.startActivity(i);
     }
 
     /**
@@ -141,6 +146,14 @@ public class ClientManager {
         return new RestClient(new RestClient.UnauthenticatedClientInfo(), null, HttpAccess.DEFAULT, null);
     }
 
+    /**
+     * Builds a new instance of a {@link RestClient} for the current user.
+     * <p>
+     * Will throw an exception if no account is currently logged in OR in the rare case that the
+     * current account is actively logging out.
+     *
+     * @return The {@link RestClient} for the current user.
+     */
     public RestClient peekRestClient() {
         return peekRestClient(getAccount());
     }
