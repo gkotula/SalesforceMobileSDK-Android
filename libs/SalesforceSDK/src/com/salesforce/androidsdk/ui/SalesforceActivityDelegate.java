@@ -76,6 +76,7 @@ public class SalesforceActivityDelegate {
 
         public ParentActivityLifecycleObserver(@NonNull final ComponentActivity parent) {
             this.savedStateProvider = () -> {
+                SalesforceSDKLogger.d(TAG, "SavedStateProvider called.");
                 final Bundle bundle = new Bundle();
                 bundle.putBoolean(KEY_HAS_STARTED_LOGIN_FLOW, hasLaunchedLoginFlowFromPeekRestClientFailure);
                 return bundle;
@@ -85,6 +86,7 @@ public class SalesforceActivityDelegate {
 
         @Override
         public void onCreate(@NonNull LifecycleOwner owner) {
+            // TODO explain why we need to do it this way instead of in the delegate's onCreate()
             savedStateRegistry.registerSavedStateProvider(KEY_SAVED_STATE_PROVIDER, savedStateProvider);
             final Bundle stored = savedStateRegistry.consumeRestoredStateForKey(KEY_SAVED_STATE_PROVIDER);
 

@@ -49,12 +49,14 @@ import com.salesforce.androidsdk.ui.SalesforceActivityInterface;
 import com.salesforce.androidsdk.util.AuthConfigUtil;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
+import com.salesforce.androidsdk.util.SalesforceSDKLogger;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaActivity;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.CordovaWebViewEngine;
 import org.apache.cordova.CordovaWebViewImpl;
+import org.apache.cordova.LOG;
 import org.json.JSONObject;
 
 import okhttp3.HttpUrl;
@@ -83,6 +85,7 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
     public SalesforceDroidGapActivity() {
         super();
         delegate = new SalesforceActivityDelegate(this);
+        LOG.setLogLevel(LOG.VERBOSE);
     }
 
     /**
@@ -90,6 +93,7 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        SalesforceSDKLogger.d(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
         init();
 
@@ -113,6 +117,7 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
 
     @Override
     public void init() {
+        SalesforceSDKLogger.d(TAG, "init()");
         super.init();
         EventsObservable.get().notifyEvent(EventType.GapWebViewCreateComplete, appView);
     }
@@ -126,6 +131,7 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
 
     @Override
     public void onResume() {
+        SalesforceSDKLogger.d(TAG, "onResume()");
         super.onResume();
 
         // Fetches auth config if required.
@@ -271,12 +277,14 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
 
     @Override
     public void onPause() {
+        SalesforceSDKLogger.d(TAG, "onPause()");
         super.onPause();
         delegate.onPause();
     }
 
     @Override
     public void onDestroy() {
+        SalesforceSDKLogger.d(TAG, "onDestroy()");
         delegate.onDestroy();
         super.onDestroy();
     }
@@ -328,6 +336,35 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
      */
     public void authenticate(final CallbackContext callbackContext) {
         SalesforceHybridLogger.i(TAG, "authenticate called");
+        try {
+            client = clientManager.peekRestClient();
+            SalesforceHybridLogger.i(TAG, "authenticate callback triggered with actual client");
+            client.sendAsync(RestRequest.getRequestForUserInfo(), new AsyncRequestCallback() {
+                @Override
+                public void onSuccess(RestRequest request, RestResponse response) {
+                    runOnUiThread(() -> {
+                        /*
+                         * The client instance being used here needs to be
+                         * refreshed, to ensure we use the new access token.
+                         */
+                        SalesforceDroidGapActivity.this.client =
+                                SalesforceDroidGapActivity.this.clientManager.peekRestClient();
+
+                        getAuthCredentials(callbackContext);
+                    });
+                }
+
+                @Override
+                public void onError(Exception exception) {
+                    if (callbackContext != null) {
+                        callbackContext.error(exception.getMessage());
+                    }
+                }
+            });
+        } catch (final Exception ex) {
+            // TODO handle case where we want to try to login
+            logout(null);
+        }
         clientManager.getRestClient(this, new RestClientCallback() {
 
             @Override
