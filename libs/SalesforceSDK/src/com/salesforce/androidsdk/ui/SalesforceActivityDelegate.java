@@ -28,9 +28,15 @@ package com.salesforce.androidsdk.ui;
 
 import android.app.Activity;
 import android.content.IntentFilter;
+import android.os.Bundle;
 import android.view.KeyEvent;
 
+import androidx.activity.ComponentActivity;
 import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
+import androidx.savedstate.SavedStateRegistry;
 
 import com.salesforce.androidsdk.accounts.UserAccountManager;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
@@ -52,9 +58,34 @@ public class SalesforceActivityDelegate {
     private LogoutCompleteReceiver logoutCompleteReceiver;
     private boolean hasLaunchedLoginFlowFromPeekRestClientFailure = false;
 
-
     public SalesforceActivityDelegate(Activity activity) {
         this.activity = activity;
+
+        if (activity instanceof ComponentActivity) {
+            setupSaveStateListener((ComponentActivity) activity);
+        }
+    }
+
+    private void setupSaveStateListener(@NonNull final ComponentActivity parentActivity) {
+        final SavedStateRegistry.SavedStateProvider provider = () -> {
+            final Bundle bundle = new Bundle();
+            bundle.putBoolean(KEY_HAS_STARTED_LOGIN_FLOW, hasLaunchedLoginFlowFromPeekRestClientFailure);
+            return bundle;
+        };
+
+        parentActivity.getLifecycle().addObserver((LifecycleEventObserver) (source, event) -> {
+            if (event == Lifecycle.Event.ON_CREATE) {
+                final SavedStateRegistry registry = parentActivity.getSavedStateRegistry();
+
+                registry.registerSavedStateProvider(KEY_SAVED_STATE_PROVIDER, provider);
+                final Bundle stored = registry.consumeRestoredStateForKey(KEY_SAVED_STATE_PROVIDER);
+
+                if (stored != null) {
+                    hasLaunchedLoginFlowFromPeekRestClientFailure =
+                            stored.getBoolean(KEY_HAS_STARTED_LOGIN_FLOW, false);
+                }
+            }
+        });
     }
 
     public void onCreate() {
@@ -162,5 +193,7 @@ public class SalesforceActivityDelegate {
         }
     }
 
-    private final static String TAG = SalesforceActivityDelegate.class.getSimpleName();
+    private static final String TAG = SalesforceActivityDelegate.class.getSimpleName();
+    private static final String KEY_SAVED_STATE_PROVIDER = SalesforceActivityDelegate.class.getName();
+    private static final String KEY_HAS_STARTED_LOGIN_FLOW = SalesforceActivityDelegate.class.getName() + ".KEY_HAS_STARTED_LOGIN_FLOW";
 }
