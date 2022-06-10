@@ -34,8 +34,8 @@ import android.view.KeyEvent;
 import androidx.activity.ComponentActivity;
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
-import androidx.lifecycle.Lifecycle;
-import androidx.lifecycle.LifecycleEventObserver;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
 import androidx.savedstate.SavedStateRegistry;
 
 import com.salesforce.androidsdk.accounts.UserAccountManager;
@@ -62,30 +62,42 @@ public class SalesforceActivityDelegate {
         this.activity = activity;
 
         if (activity instanceof ComponentActivity) {
-            setupSaveStateListener((ComponentActivity) activity);
+            final ComponentActivity parent = (ComponentActivity) activity;
+            parent.getLifecycle().addObserver(new ParentActivityLifecycleObserver(parent));
         }
     }
 
-    private void setupSaveStateListener(@NonNull final ComponentActivity parentActivity) {
-        final SavedStateRegistry.SavedStateProvider provider = () -> {
-            final Bundle bundle = new Bundle();
-            bundle.putBoolean(KEY_HAS_STARTED_LOGIN_FLOW, hasLaunchedLoginFlowFromPeekRestClientFailure);
-            return bundle;
-        };
+    private class ParentActivityLifecycleObserver implements DefaultLifecycleObserver {
+        @NonNull
+        private final SavedStateRegistry.SavedStateProvider savedStateProvider;
 
-        parentActivity.getLifecycle().addObserver((LifecycleEventObserver) (source, event) -> {
-            if (event == Lifecycle.Event.ON_CREATE) {
-                final SavedStateRegistry registry = parentActivity.getSavedStateRegistry();
+        @NonNull
+        private final SavedStateRegistry savedStateRegistry;
 
-                registry.registerSavedStateProvider(KEY_SAVED_STATE_PROVIDER, provider);
-                final Bundle stored = registry.consumeRestoredStateForKey(KEY_SAVED_STATE_PROVIDER);
+        public ParentActivityLifecycleObserver(@NonNull final ComponentActivity parent) {
+            this.savedStateProvider = () -> {
+                final Bundle bundle = new Bundle();
+                bundle.putBoolean(KEY_HAS_STARTED_LOGIN_FLOW, hasLaunchedLoginFlowFromPeekRestClientFailure);
+                return bundle;
+            };
+            this.savedStateRegistry = parent.getSavedStateRegistry();
+        }
 
-                if (stored != null) {
-                    hasLaunchedLoginFlowFromPeekRestClientFailure =
-                            stored.getBoolean(KEY_HAS_STARTED_LOGIN_FLOW, false);
-                }
+        @Override
+        public void onCreate(@NonNull LifecycleOwner owner) {
+            savedStateRegistry.registerSavedStateProvider(KEY_SAVED_STATE_PROVIDER, savedStateProvider);
+            final Bundle stored = savedStateRegistry.consumeRestoredStateForKey(KEY_SAVED_STATE_PROVIDER);
+
+            if (stored != null) {
+                hasLaunchedLoginFlowFromPeekRestClientFailure =
+                        stored.getBoolean(KEY_HAS_STARTED_LOGIN_FLOW, false);
             }
-        });
+        }
+
+        @Override
+        public void onDestroy(@NonNull LifecycleOwner owner) {
+            owner.getLifecycle().removeObserver(this);
+        }
     }
 
     public void onCreate() {
@@ -153,7 +165,8 @@ public class SalesforceActivityDelegate {
         }
     }
 
-    public void onPause() { }
+    public void onPause() {
+    }
 
     public void onDestroy() {
         activity.unregisterReceiver(userSwitchReceiver);
