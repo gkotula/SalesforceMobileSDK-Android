@@ -38,10 +38,10 @@ import com.salesforce.androidsdk.smartstore.store.SmartStore.SmartStoreException
 import com.salesforce.androidsdk.smartstore.store.SmartStore.Type;
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger;
 
-import net.sqlcipher.DatabaseUtils.InsertHelper;
-import net.sqlcipher.database.SQLiteDatabase;
-import net.sqlcipher.database.SQLiteDoneException;
-import net.sqlcipher.database.SQLiteStatement;
+import net.zetetic.database.DatabaseUtils;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteDoneException;
+import net.zetetic.database.sqlcipher.SQLiteStatement;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -117,9 +117,9 @@ public class DBHelper {
 	};
 
 	// Cache of table name to insert helpers
-	private LruCache<String, InsertHelper> tableNameToInsertHelpersMap = new LruCache<String, InsertHelper>(CACHES_COUNT_LIMIT) {
+	private LruCache<String, DatabaseUtils.InsertHelper> tableNameToInsertHelpersMap = new LruCache<String, DatabaseUtils.InsertHelper>(CACHES_COUNT_LIMIT) {
 		@Override
-		protected void entryRemoved(boolean evicted, String key, InsertHelper oldValue, InsertHelper newValue) {
+		protected void entryRemoved(boolean evicted, String key, DatabaseUtils.InsertHelper oldValue, DatabaseUtils.InsertHelper newValue) {
 			oldValue.close();
 		}
 	};
@@ -203,7 +203,7 @@ public class DBHelper {
 	public void removeFromCache(String soupName) {
 		String tableName = soupNameToTableNamesMap.get(soupName);
 		if (tableName != null) {
-			InsertHelper ih = tableNameToInsertHelpersMap.remove(tableName);
+			DatabaseUtils.InsertHelper ih = tableNameToInsertHelpersMap.remove(tableName);
 			if (ih != null) 
 				ih.close();
 			
@@ -262,10 +262,10 @@ public class DBHelper {
 	 * @param table
 	 * @return
 	 */
-	public InsertHelper getInsertHelper(SQLiteDatabase db, String table) {
-		InsertHelper insertHelper = tableNameToInsertHelpersMap.get(table);
+	public DatabaseUtils.InsertHelper getInsertHelper(SQLiteDatabase db, String table) {
+		DatabaseUtils.InsertHelper insertHelper = tableNameToInsertHelpersMap.get(table);
 		if (insertHelper == null) {
-			insertHelper = new InsertHelper(db, table);
+			insertHelper = new DatabaseUtils.InsertHelper(db, table);
 			tableNameToInsertHelpersMap.put(table, insertHelper);
 		}
 		return insertHelper;
@@ -390,7 +390,7 @@ public class DBHelper {
 	 * @return row id of inserted row
 	 */
 	public long insert(SQLiteDatabase db, String table, ContentValues contentValues) {
-		InsertHelper ih = getInsertHelper(db, table);
+		DatabaseUtils.InsertHelper ih = getInsertHelper(db, table);
 		long rowId = ih.insert(contentValues);
 		if (rowId == -1) {
 			// In case of failure InsertHelper.insert swallows the SQLException and returns -1

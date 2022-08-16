@@ -43,7 +43,6 @@ import com.salesforce.androidsdk.smartstore.store.SoupSpec;
 import com.salesforce.androidsdk.smartstore.store.StoreCursor;
 import com.salesforce.androidsdk.smartstore.ui.SmartStoreInspectorActivity;
 
-import net.sqlcipher.database.SQLiteDatabase;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
@@ -71,6 +70,8 @@ import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.SOUP_NAM
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.SOUP_SPEC;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.STORE_NAME;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.TYPE;
+
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
 
 
 /**

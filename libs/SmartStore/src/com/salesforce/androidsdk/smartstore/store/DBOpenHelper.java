@@ -38,9 +38,11 @@ import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager;
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger;
 import com.salesforce.androidsdk.util.ManagedFilesHelper;
 
-import net.sqlcipher.database.SQLiteDatabase;
-import net.sqlcipher.database.SQLiteDatabaseHook;
-import net.sqlcipher.database.SQLiteOpenHelper;
+import net.zetetic.database.DatabaseErrorHandler;
+import net.zetetic.database.sqlcipher.SQLiteConnection;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteDatabaseHook;
+import net.zetetic.database.sqlcipher.SQLiteOpenHelper;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -53,6 +55,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import kotlin.NotImplementedError;
 
 /**
  * Helper class to manage SmartStore's database creation and version management.
@@ -185,15 +189,22 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		return helper;
 	}
 
-	protected DBOpenHelper(Context context, String dbName) {
-		super(context, dbName, null, DB_VERSION, new DBHook());
-		this.loadLibs(context);
-		this.dbName = dbName;
-		dataDir = context.getApplicationInfo().dataDir;
+	protected DBOpenHelper(Context context, String dbName) throws NotImplementedError {
+		super(context, dbName, null, DB_VERSION, new DatabaseErrorHandler() {
+			@Override
+			public void onCorruption(SQLiteDatabase dbObj) {
+				throw new NotImplementedError("onCorruption");
+			}
+		});
+		throw new NotImplementedError("DBOpenHelper");
+//		this.loadLibs(context);
+//		this.dbName = dbName;
+//		dataDir = context.getApplicationInfo().dataDir;
 	}
 
 	protected void loadLibs(Context context) {
-		SQLiteDatabase.loadLibs(context);
+		throw new NotImplementedError("loadLibs");
+//		SQLiteDatabase.loadLibs(context);
 	}
 
 	@Override
@@ -388,6 +399,16 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 */
 		public void postKey(SQLiteDatabase database) {
 			database.rawExecSQL("PRAGMA cipher_migrate");
+		}
+
+		@Override
+		public void preKey(SQLiteConnection connection) {
+			throw new NotImplementedError("preKey");
+		}
+
+		@Override
+		public void postKey(SQLiteConnection connection) {
+			throw new NotImplementedError("postKey");
 		}
 	}
 

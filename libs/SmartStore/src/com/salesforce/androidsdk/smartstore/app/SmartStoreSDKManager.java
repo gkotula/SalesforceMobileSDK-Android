@@ -45,7 +45,6 @@ import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
 import com.salesforce.androidsdk.util.ManagedFilesHelper;
 
-import net.sqlcipher.database.SQLiteOpenHelper;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -53,6 +52,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 import static com.salesforce.androidsdk.smartstore.store.KeyValueEncryptedFileStore.KEY_VALUE_STORES;
+
+import net.zetetic.database.sqlcipher.SQLiteOpenHelper;
 
 /**
  * SDK Manager for all native applications that use SmartStore
