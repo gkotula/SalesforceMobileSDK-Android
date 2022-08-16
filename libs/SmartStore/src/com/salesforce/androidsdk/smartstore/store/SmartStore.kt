@@ -31,15 +31,16 @@ import android.database.Cursor
 import android.text.TextUtils
 import com.salesforce.androidsdk.analytics.EventBuilderHelper
 import com.salesforce.androidsdk.app.SalesforceSDKManager
-import com.salesforce.androidsdk.smartstore.store.LongOperation.LongOperationType
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.Executors
 
 /**
  * Smart store
@@ -49,23 +50,22 @@ import java.util.concurrent.Executors
  * SmartStore is inspired by the Apple Newton OS Soup/Store model.
  * The main challenge here is how to effectively store documents with dynamic fields, and still allow indexing and searching.
  */
-open class SmartStore(
+open class SmartStore @JvmOverloads constructor(
     @JvmField val dbOpenHelper: SQLiteOpenHelper,
-//    @JvmField val encryptionKey: String?
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     // Backing database
     private var hasResumedLongOperations = false
     open val database: SQLiteDatabase
         get() {
-//            return synchronized(this) {
-//                val db = dbOpenHelper.getWritableDatabase(encryptionKey)
-//                if (!hasResumedLongOperations) {
-//                    hasResumedLongOperations = true
-//                    resumeLongOperations()
-//                }
-//                db
-//            }
-            TODO("getDatabase()")
+            return synchronized(this) {
+                val db = dbOpenHelper.writableDatabase
+                if (!hasResumedLongOperations) {
+                    hasResumedLongOperations = true
+                    resumeLongOperations()
+                }
+                db
+            }
         }
 
     /**
@@ -73,9 +73,6 @@ open class SmartStore(
      * The setter should _only_ be used in tests
      */
     open var ftsExtension = FtsExtension.fts5
-
-    // background executor
-    private val threadPool = Executors.newFixedThreadPool(1)
 
     /**
      * If turned on, explain query plan is run before executing a query and stored in lastExplainQueryPlan
@@ -101,13 +98,12 @@ open class SmartStore(
      */
     open val databaseSize: Int
         get() {
-//            var size = File(database.path).length()
-//                .toInt() // XXX That cast will be trouble if the file is more than 2GB
-//            if (dbOpenHelper is DBOpenHelper) {
-//                size += dbOpenHelper.getSizeOfDir(null)
-//            }
-//            return size
-            TODO("databaseSize")
+            var size = File(database.path).length()
+                .toInt() // XXX That cast will be trouble if the file is more than 2GB
+            if (dbOpenHelper is DBOpenHelper) {
+                size += dbOpenHelper.getSizeOfDir(null)
+            }
+            return size
         }
 
     /**
@@ -135,6 +131,38 @@ open class SmartStore(
         TODO("setTransactionSuccessful")
     }
 
+    private val soupRegisterMutex = Mutex()
+
+    @Throws(SmartStoreException::class)
+    suspend fun registerSoup(soupName: String, indexSpecs: Array<IndexSpec>) =
+        withContext(ioDispatcher) {
+            soupRegisterMutex.withLock {
+                if (indexSpecs.isEmpty()) throw SmartStoreException("No indexSpecs specified for soup: $soupName")
+                if (hasSoup(soupName)) return@withLock // soup already exist - do nothing
+
+                val soupMapValues = ContentValues().apply { put(SOUP_NAME_COL, soupName) }
+
+                try {
+                    database.beginTransaction()
+                    val soupId =
+                        DBHelper.getInstance(database)
+                            .insert(database, SOUP_ATTRS_TABLE, soupMapValues)
+                    val soupTableName = getSoupTableName(soupId)
+
+                    // Do the rest - create table / indexes
+                    registerSoupUsingTableName(soupName, indexSpecs, soupTableName)
+                    database.setTransactionSuccessful()
+                } finally {
+                    database.endTransaction()
+                }
+                if (SalesforceSDKManager.getInstance().isTestRun) {
+                    logRegisterSoupEvent(indexSpecs)
+                } else {
+                    launch(Dispatchers.Default) { logRegisterSoupEvent(indexSpecs) }
+                }
+            }
+        }
+
     /**
      * Register a soup without any features. Use [.registerSoupWithSpec] to enable features such as external storage, etc.
      *
@@ -145,11 +173,12 @@ open class SmartStore(
      * @param indexSpecs
      */
     open fun registerSoup(soupName: String?, indexSpecs: Array<IndexSpec>) {
-//        registerSoup(SoupSpec(soupName).soupName, indexSpecs)
-        TODO("registerSoup")
+        if (soupName == null) throw SmartStoreException("Bogus soup name: $soupName")
+        runBlocking { registerSoup(soupName, indexSpecs) }
     }
 
     /**
+     * DEPRECATED: This is a no-op.
      * Register a soup using the given soup specifications. This allows the soup to use extra features such as external storage.
      *
      * Create table for soupName with a column for the soup itself and columns for paths specified in indexSpecs
@@ -163,40 +192,6 @@ open class SmartStore(
         replaceWith = ReplaceWith("registerSoup(soupSpec.soupName, indexSpecs)")
     )
     open fun registerSoupWithSpec(soupSpec: SoupSpec, indexSpecs: Array<IndexSpec>) {
-//        synchronized(database) {
-//            val soupName = soupSpec.soupName
-//            if (soupName == null) throw SmartStoreException("Bogus soup name:$soupName")
-//            if (indexSpecs.isEmpty()) throw SmartStoreException("No indexSpecs specified for soup: $soupName")
-//            if (IndexSpec.hasJSON1(indexSpecs) && soupSpec.features.contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) throw SmartStoreException(
-//                "Can't have JSON1 index specs in externally stored soup:$soupName"
-//            )
-//            if (hasSoup(soupName)) return  // soup already exist - do nothing
-//
-//            // Register features from soup spec
-//            val soupMapValues = ContentValues().apply { put(SOUP_NAME_COL, soupName) }
-//            soupSpec.features.forEach { feature: String? ->
-//                soupMapValues.put(feature, 1)
-//            }
-//
-//            try {
-//                database.beginTransaction()
-//                val soupId =
-//                    DBHelper.getInstance(database).insert(database, SOUP_ATTRS_TABLE, soupMapValues)
-//                val soupTableName = getSoupTableName(soupId)
-//
-//                // Do the rest - create table / indexes
-//                registerSoupUsingTableName(soupSpec, indexSpecs, soupTableName)
-//                database.setTransactionSuccessful()
-//            } finally {
-//                database.endTransaction()
-//            }
-//            if (SalesforceSDKManager.getInstance().isTestRun) {
-//                logRegisterSoupEvent(soupSpec, indexSpecs)
-//            } else {
-//                threadPool.execute { logRegisterSoupEvent(soupSpec, indexSpecs) }
-//            }
-//        }
-        TODO("registerSoupWithSpec")
     }
 
     /**
@@ -204,16 +199,13 @@ open class SmartStore(
      * @param soupSpec
      * @param indexSpecs
      */
-    private fun logRegisterSoupEvent(soupSpec: SoupSpec, indexSpecs: Array<IndexSpec>) {
+    private fun logRegisterSoupEvent(indexSpecs: Array<IndexSpec>) {
         val features = JSONArray()
         if (IndexSpec.hasJSON1(indexSpecs)) {
             features.put("JSON1")
         }
         if (IndexSpec.hasFTS(indexSpecs)) {
             features.put("FTS")
-        }
-        if (soupSpec.features.contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
-            features.put("ExternalStorage")
         }
         val attributes = JSONObject()
         try {
@@ -227,136 +219,133 @@ open class SmartStore(
     /**
      * Helper method for registerSoup using soup spec
      *
-     * @param soupSpec
+     * @param soupName
      * @param indexSpecs
      * @param soupTableName
      */
     open fun registerSoupUsingTableName(
-        soupSpec: SoupSpec,
+        soupName: String,
         indexSpecs: Array<IndexSpec>,
         soupTableName: String
     ) {
-        TODO("registerSoupUsingTableName")
         // Prepare SQL for creating soup table and its indices
-//        val createTableStmt = StringBuilder() // to create new soup table
-//        val createFtsStmt = StringBuilder() // to create fts table
-//        val createIndexStmts = mutableListOf<String>() // to create indices on new soup table
-//        val soupIndexMapInserts =
-//            mutableListOf<ContentValues>() // to be inserted in soup index map table
-//        val indexSpecsToCache = arrayOfNulls<IndexSpec>(indexSpecs.size)
-//        val columnsForFts: MutableList<String?> = ArrayList()
-//        val soupName = soupSpec.soupName
-//
-//        createTableStmt
-//            .append("CREATE TABLE $soupTableName ($ID_COL INTEGER PRIMARY KEY AUTOINCREMENT")
-//
-//        if (!usesExternalStorage(soupName)) {
-//            // If external storage is used, do not add column for soup in the db since it will be empty.
-//            createTableStmt.append(", $SOUP_COL TEXT")
-//        }
-//        createTableStmt.append(", $CREATED_COL INTEGER, $LAST_MODIFIED_COL INTEGER")
-//
-//        val createIndexFormat = "CREATE INDEX %s_%s_idx on %s ( %s )"
-//        listOf(CREATED_COL, LAST_MODIFIED_COL).forEach { col ->
-//            createIndexStmts.add(
-//                String.format(createIndexFormat, soupTableName, col, soupTableName, col)
-//            )
-//        }
-//
-//        indexSpecs.forEachIndexed { i, indexSpec ->
-//            // Column name or expression the db index is on
-//            var columnName = "${soupTableName}_$i"
-//            if (TypeGroup.value_indexed_with_json_extract.isMember(indexSpec.type)) {
-//                columnName = "json_extract($SOUP_COL, '$.${indexSpec.path}')"
-//            }
-//
-//            // for create table
-//            if (TypeGroup.value_extracted_to_column.isMember(indexSpec.type)) {
-//                val columnType = indexSpec.type.columnType
-//                createTableStmt.append(", $columnName $columnType")
-//            }
-//
-//            // for fts
-//            if (indexSpec.type == Type.full_text) {
-//                columnsForFts.add(columnName)
-//            }
-//
-//            // for insert
-//            val values = ContentValues().apply {
-//                put(SOUP_NAME_COL, soupName)
-//                put(PATH_COL, indexSpec.path)
-//                put(COLUMN_NAME_COL, columnName)
-//                put(COLUMN_TYPE_COL, indexSpec.type.toString())
-//            }
-//            soupIndexMapInserts.add(values)
-//
-//            // for create index
-//            createIndexStmts.add(
-//                String.format(
-//                    createIndexFormat,
-//                    soupTableName,
-//                    i,
-//                    soupTableName,
-//                    columnName
-//                )
-//            )
-//
-//            // for the cache
-//            indexSpecsToCache[i] = IndexSpec(indexSpec.path, indexSpec.type, columnName)
-//        }
-//        createTableStmt.append(")")
-//
-//        // fts
-//        if (columnsForFts.size > 0) {
-//            val ftsColumns = TextUtils.join(",", columnsForFts)
-//            createFtsStmt.append(
-//                "CREATE VIRTUAL TABLE $soupTableName$FTS_SUFFIX USING $ftsExtension($ftsColumns)"
-//            )
-//        }
-//
-//        // Run SQL for creating soup table and its indices
-//        val db = database
-//        db.execSQL(createTableStmt.toString())
-//        if (columnsForFts.size > 0) {
-//            db.execSQL(createFtsStmt.toString())
-//        }
-//        createIndexStmts.forEach { createIndexStmt ->
-//            db.execSQL(createIndexStmt)
-//        }
-//        try {
-//            db.beginTransaction()
-//            soupIndexMapInserts.forEach { values ->
-//                DBHelper.getInstance(db).insert(db, SOUP_INDEX_MAP_TABLE, values)
-//            }
-//            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
-//                dbOpenHelper.createExternalBlobsDirectory(soupTableName)
-//            }
-//            db.setTransactionSuccessful()
-//
-//            // Add to soupNameToTableNamesMap
-//            DBHelper.getInstance(db).cacheTableName(soupName, soupTableName)
-//
-//            // Add to soupNameToIndexSpecsMap
-//            DBHelper.getInstance(db).cacheIndexSpecs(soupName, indexSpecsToCache)
-//        } finally {
-//            db.endTransaction()
-//        }
+        val createTableStmt = StringBuilder() // to create new soup table
+        val createFtsStmt = StringBuilder() // to create fts table
+        val createIndexStmts = mutableListOf<String>() // to create indices on new soup table
+        val soupIndexMapInserts =
+            mutableListOf<ContentValues>() // to be inserted in soup index map table
+        val indexSpecsToCache = arrayOfNulls<IndexSpec>(indexSpecs.size)
+        val columnsForFts: MutableList<String?> = ArrayList()
+
+        createTableStmt
+            .append("CREATE TABLE $soupTableName ($ID_COL INTEGER PRIMARY KEY AUTOINCREMENT")
+
+        if (!usesExternalStorage(soupName)) {
+            // If external storage is used, do not add column for soup in the db since it will be empty.
+            createTableStmt.append(", $SOUP_COL TEXT")
+        }
+        createTableStmt.append(", $CREATED_COL INTEGER, $LAST_MODIFIED_COL INTEGER")
+
+        val createIndexFormat = "CREATE INDEX %s_%s_idx on %s ( %s )"
+        listOf(CREATED_COL, LAST_MODIFIED_COL).forEach { col ->
+            createIndexStmts.add(
+                String.format(createIndexFormat, soupTableName, col, soupTableName, col)
+            )
+        }
+
+        indexSpecs.forEachIndexed { i, indexSpec ->
+            // Column name or expression the db index is on
+            var columnName = "${soupTableName}_$i"
+            if (TypeGroup.value_indexed_with_json_extract.isMember(indexSpec.type)) {
+                columnName = "json_extract($SOUP_COL, '$.${indexSpec.path}')"
+            }
+
+            // for create table
+            if (TypeGroup.value_extracted_to_column.isMember(indexSpec.type)) {
+                val columnType = indexSpec.type.columnType
+                createTableStmt.append(", $columnName $columnType")
+            }
+
+            // for fts
+            if (indexSpec.type == Type.full_text) {
+                columnsForFts.add(columnName)
+            }
+
+            // for insert
+            val values = ContentValues().apply {
+                put(SOUP_NAME_COL, soupName)
+                put(PATH_COL, indexSpec.path)
+                put(COLUMN_NAME_COL, columnName)
+                put(COLUMN_TYPE_COL, indexSpec.type.toString())
+            }
+            soupIndexMapInserts.add(values)
+
+            // for create index
+            createIndexStmts.add(
+                String.format(
+                    createIndexFormat,
+                    soupTableName,
+                    i,
+                    soupTableName,
+                    columnName
+                )
+            )
+
+            // for the cache
+            indexSpecsToCache[i] = IndexSpec(indexSpec.path, indexSpec.type, columnName)
+        }
+        createTableStmt.append(")")
+
+        // fts
+        if (columnsForFts.size > 0) {
+            val ftsColumns = TextUtils.join(",", columnsForFts)
+            createFtsStmt.append(
+                "CREATE VIRTUAL TABLE $soupTableName$FTS_SUFFIX USING $ftsExtension($ftsColumns)"
+            )
+        }
+
+        // Run SQL for creating soup table and its indices
+        val db = database
+        db.execSQL(createTableStmt.toString())
+        if (columnsForFts.size > 0) {
+            db.execSQL(createFtsStmt.toString())
+        }
+        createIndexStmts.forEach { createIndexStmt ->
+            db.execSQL(createIndexStmt)
+        }
+        try {
+            db.beginTransaction()
+            soupIndexMapInserts.forEach { values ->
+                DBHelper.getInstance(db).insert(db, SOUP_INDEX_MAP_TABLE, values)
+            }
+            if (usesExternalStorage(soupName) && dbOpenHelper is DBOpenHelper) {
+                dbOpenHelper.createExternalBlobsDirectory(soupTableName)
+            }
+            db.setTransactionSuccessful()
+
+            // Add to soupNameToTableNamesMap
+            DBHelper.getInstance(db).cacheTableName(soupName, soupTableName)
+
+            // Add to soupNameToIndexSpecsMap
+            DBHelper.getInstance(db).cacheIndexSpecs(soupName, indexSpecsToCache)
+        } finally {
+            db.endTransaction()
+        }
     }
 
     /**
      * Finish long operations that were interrupted
      */
     open fun resumeLongOperations() {
-//        synchronized(database) {
-//            for (longOperation: LongOperation in longOperations) {
-//                try {
-//                    longOperation.run()
-//                } catch (e: Exception) {
-//                    SmartStoreLogger.e(TAG, "Unexpected error", e)
-//                }
-//            }
-//        }
-        TODO("resumeLongOperations")
+        synchronized(database) {
+            for (longOperation: LongOperation in longOperations) {
+                try {
+                    longOperation.run()
+                } catch (e: Exception) {
+                    SmartStoreLogger.e(TAG, "Unexpected error", e)
+                }
+            }
+        }
     }
 
     /**
@@ -1685,7 +1674,7 @@ open class SmartStore(
      */
     @Deprecated(message = "We are removing external storage and soup spec in 11.0")
     open fun usesExternalStorage(soupName: String?): Boolean {
-        TODO("usesExternalStorage")
+        return false
 //        synchronized(database) {
 //            return DBHelper.getInstance(database)
 //                .getFeatures(database, soupName)

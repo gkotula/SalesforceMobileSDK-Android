@@ -460,7 +460,7 @@ public class SmartStorePlugin extends ForcePlugin {
 
 		// Run register
 		if (soupSpec != null) {
-			smartStore.registerSoupWithSpec(soupSpec, indexSpecs);
+			smartStore.registerSoup(soupSpec.getSoupName(), indexSpecs);
 		} else {
 			smartStore.registerSoup(soupName, indexSpecs);
 		}

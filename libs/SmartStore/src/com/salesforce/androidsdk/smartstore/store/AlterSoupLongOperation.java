@@ -45,6 +45,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import kotlin.NotImplementedError;
+
 /**
  * Class taking care of alter soup
  * Two entry points:
@@ -326,27 +328,28 @@ public class AlterSoupLongOperation extends LongOperation {
 	 * Step 3: register soup with new indexes
 	 */
 	protected void registerSoupUsingTableName() {
-		try {
-			db.beginTransaction();
-
-			// Update soup_attrs table for soup
-			ContentValues soupMapValues = new ContentValues();
-			for (String feature : SoupSpec.ALL_FEATURES) {
-				soupMapValues.put(feature, newSoupSpec.getFeatures().contains(feature) ? 1 : 0);
-			}
-			DBHelper.getInstance(db).update(db, SmartStore.SOUP_ATTRS_TABLE, soupMapValues, SmartStore.SOUP_NAME_PREDICATE, soupName);
-
-			// Create new table for soup
-			store.registerSoupUsingTableName(newSoupSpec, newIndexSpecs, soupTableName);
-
-			// Update row in alter status table
-			updateLongOperationDbRow(AlterSoupStep.REGISTER_SOUP_USING_TABLE_NAME);
-
-			db.setTransactionSuccessful();
-		}
-		finally {
-			db.endTransaction();
-		}
+		throw new NotImplementedError("registerSoupUsingTableName");
+//		try {
+//			db.beginTransaction();
+//
+//			// Update soup_attrs table for soup
+//			ContentValues soupMapValues = new ContentValues();
+//			for (String feature : SoupSpec.ALL_FEATURES) {
+//				soupMapValues.put(feature, newSoupSpec.getFeatures().contains(feature) ? 1 : 0);
+//			}
+//			DBHelper.getInstance(db).update(db, SmartStore.SOUP_ATTRS_TABLE, soupMapValues, SmartStore.SOUP_NAME_PREDICATE, soupName);
+//
+//			// Create new table for soup
+//			store.registerSoupUsingTableName(newSoupSpec, newIndexSpecs, soupTableName);
+//
+//			// Update row in alter status table
+//			updateLongOperationDbRow(AlterSoupStep.REGISTER_SOUP_USING_TABLE_NAME);
+//
+//			db.setTransactionSuccessful();
+//		}
+//		finally {
+//			db.endTransaction();
+//		}
 	}
 
 

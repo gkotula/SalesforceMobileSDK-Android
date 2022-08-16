@@ -315,7 +315,7 @@ public class SmartStoreReactBridge extends ReactContextBaseJavaModule {
 			SoupSpec soupSpec = getSoupSpecFromArg(args);
 
 			if (soupSpec != null) {
-                smartStore.registerSoupWithSpec(soupSpec, indexSpecs);
+                smartStore.registerSoup(soupSpec.getSoupName(), indexSpecs);
             } else {
                 smartStore.registerSoup(soupName, indexSpecs);
             }
