@@ -36,7 +36,7 @@ import com.salesforce.androidsdk.util.JSONTestHelper;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import net.sqlcipher.database.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -93,7 +93,7 @@ public class SmartStoreExternalStorageTest extends SmartStoreTest {
 
 	    // Get initial values
 		int totalSizeBefore = store.getDatabaseSize();
-		int dBFileSizeBefore = (int) (new File(dbOpenHelper.getWritableDatabase(getEncryptionKey()).getPath()).length());
+		int dBFileSizeBefore = (int) (new File(dbOpenHelper.getWritableDatabase().getPath()).length());
 		int dbBlobsDirSizeBefore = totalSizeBefore - dBFileSizeBefore;
 
 		// Populate db with several entries
@@ -104,7 +104,7 @@ public class SmartStoreExternalStorageTest extends SmartStoreTest {
 
 		// Check new values
 		int totalSizeAfter = store.getDatabaseSize();
-		int dbFileSizeAfter = (int) (new File(dbOpenHelper.getWritableDatabase(getEncryptionKey()).getPath()).length());
+		int dbFileSizeAfter = (int) (new File(dbOpenHelper.getWritableDatabase().getPath()).length());
 		int dbBlobsDirSizeAfter = totalSizeAfter - dbFileSizeAfter;
         Assert.assertTrue("Database file should be larger", dbFileSizeAfter > dBFileSizeBefore);
         Assert.assertTrue("Soup blobs directory should be larger", dbBlobsDirSizeAfter > dbBlobsDirSizeBefore);
@@ -123,7 +123,7 @@ public class SmartStoreExternalStorageTest extends SmartStoreTest {
 		store.create(TEST_SOUP, soupElt);
 
 		// Act
-		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 		SmartStore.changeKey(db, getEncryptionKey(), newPasscode);
 		store = new SmartStore(dbOpenHelper, newPasscode);
 

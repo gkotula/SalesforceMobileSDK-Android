@@ -31,7 +31,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
 import com.salesforce.androidsdk.smartstore.store.SmartStore.Type;
 import java.util.Arrays;
-import net.sqlcipher.database.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -163,7 +163,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
             Assert.assertEquals("getSoupTableName should have returned TABLE_1", "TABLE_1", soupTableName);
             Assert.assertTrue("Table for soup employees does exist", hasTable(soupTableName));
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -240,7 +240,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
         Cursor c = null;
         try {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -263,7 +263,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
         // Check DB
         try {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -288,7 +288,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
         // Check DB
         try {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -331,7 +331,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
         Cursor c = null;
         try {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -354,7 +354,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
         // Check DB
         try {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);
@@ -406,7 +406,7 @@ public class SmartStoreFullTextSearchTest extends SmartStoreTestCase {
             String soupTableName = getSoupTableName(EMPLOYEES_SOUP);
             Assert.assertEquals("getSoupTableName should have returned TABLE_1", "TABLE_1", soupTableName);
             Assert.assertTrue("Table for soup employees does exist", hasTable(soupTableName));
-            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+            final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 
             // Check soup table
             c = DBHelper.getInstance(db).query(db, soupTableName, null, "id ASC", null, null);

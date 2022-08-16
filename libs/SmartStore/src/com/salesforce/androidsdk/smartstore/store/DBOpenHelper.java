@@ -38,7 +38,6 @@ import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager;
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger;
 import com.salesforce.androidsdk.util.ManagedFilesHelper;
 
-import net.zetetic.database.DatabaseErrorHandler;
 import net.zetetic.database.sqlcipher.SQLiteConnection;
 import net.zetetic.database.sqlcipher.SQLiteDatabase;
 import net.zetetic.database.sqlcipher.SQLiteDatabaseHook;
@@ -55,8 +54,6 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import kotlin.NotImplementedError;
 
 /**
  * Helper class to manage SmartStore's database creation and version management.
@@ -120,8 +117,8 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	 * @return DBOpenHelper instance.
 	 */
 	public static synchronized DBOpenHelper getOpenHelper(Context ctx,
-			UserAccount account) {
-		return getOpenHelper(ctx, account, null);
+			UserAccount account, String encryptionKey) {
+		return getOpenHelper(ctx, account, null, encryptionKey);
 	}
 
 	/**
@@ -133,8 +130,8 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	 * @return DBOpenHelper instance.
 	 */
 	public static synchronized DBOpenHelper getOpenHelper(Context ctx,
-			UserAccount account, String communityId) {
-		return getOpenHelper(ctx, DEFAULT_DB_NAME, account, communityId);
+			UserAccount account, String communityId, String encryptionKey) {
+		return getOpenHelper(ctx, DEFAULT_DB_NAME, account, communityId, encryptionKey);
 	}
 
 	/**
@@ -151,7 +148,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	 * @return DBOpenHelper instance.
 	 */
 	public static DBOpenHelper getOpenHelper(Context ctx, String dbNamePrefix,
-			UserAccount account, String communityId) {
+			UserAccount account, String communityId, String encryptionKey) {
 		final StringBuilder dbName = new StringBuilder(dbNamePrefix);
 
 		// If we have account information, we will use it to create a database suffix for the user.
@@ -183,28 +180,40 @@ public class DBOpenHelper extends SQLiteOpenHelper {
                 SmartStoreLogger.e(TAG, "Error occurred while creating JSON", e);
 			}
 			EventBuilderHelper.createAndStoreEvent(eventName, account, TAG, storeAttributes);
-			helper = new DBOpenHelper(ctx, fullDBName);
+			helper = new DBOpenHelper(ctx, fullDBName, encryptionKey);
 			openHelpers.put(fullDBName, helper);
 		}
 		return helper;
 	}
 
-	protected DBOpenHelper(Context context, String dbName) throws NotImplementedError {
-		super(context, dbName, null, DB_VERSION, new DatabaseErrorHandler() {
-			@Override
-			public void onCorruption(SQLiteDatabase dbObj) {
-				throw new NotImplementedError("onCorruption");
-			}
-		});
-		throw new NotImplementedError("DBOpenHelper");
-//		this.loadLibs(context);
-//		this.dbName = dbName;
-//		dataDir = context.getApplicationInfo().dataDir;
+	protected DBOpenHelper(Context context, String dbName, String password) {
+		super(
+				context,
+				dbName,
+				password,
+				null, // factory
+				DB_VERSION, // Current DB version
+				0, // minimumSupportedVersion
+				null, // errorHandler
+				new DBHook(),
+				true // enableWAL
+		);
+		loadLibs();
+		this.dbName = dbName;
+		dataDir = context.getApplicationInfo().dataDir;
 	}
 
+	/**
+	 * @deprecated Replace with {@link DBOpenHelper#loadLibs()}
+	 * @param context Application context
+	 */
+	@Deprecated
 	protected void loadLibs(Context context) {
-		throw new NotImplementedError("loadLibs");
-//		SQLiteDatabase.loadLibs(context);
+		loadLibs();
+	}
+
+	protected void loadLibs() {
+		System.loadLibrary("sqlcipher");
 	}
 
 	@Override
@@ -223,7 +232,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * set the default SQLCipher locking to 'false', since we
 		 * manage locking at our level anyway.
 		 */
-		db.setLockingEnabled(false);
+//		db.setLockingEnabled(false); // no-op in new version
 		SmartStore.createMetaTables(db);
 	}
 
@@ -238,7 +247,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * set the default SQLCipher locking to 'false', since we
 		 * manage locking at our level anyway.
 		 */
-		db.setLockingEnabled(false);
+//		db.setLockingEnabled(false); // no-op in new version
 	}
 
 	/**
@@ -387,28 +396,20 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	}
 
 	static class DBHook implements SQLiteDatabaseHook {
-		public void preKey(SQLiteDatabase database) {
+		@Override
+		public void preKey(SQLiteConnection connection) {
 			// Using sqlcipher 2.x kdf iter because 3.x default (64000) and 4.x default (256000) are too slow
 			// => should open 2.x databases without any migration
-			database.execSQL("PRAGMA cipher_default_kdf_iter = 4000");
+			connection.execute("PRAGMA cipher_default_kdf_iter = 4000", null, null);
 		}
 
 		/**
 		 * Need to migrate for SqlCipher 4.x
-		 * @param database db being processed
+		 * @param connection Connection to the db being processed
 		 */
-		public void postKey(SQLiteDatabase database) {
-			database.rawExecSQL("PRAGMA cipher_migrate");
-		}
-
-		@Override
-		public void preKey(SQLiteConnection connection) {
-			throw new NotImplementedError("preKey");
-		}
-
 		@Override
 		public void postKey(SQLiteConnection connection) {
-			throw new NotImplementedError("postKey");
+			connection.executeForChangedRowCount("PRAGMA cipher_migrate", null, null);
 		}
 	}
 

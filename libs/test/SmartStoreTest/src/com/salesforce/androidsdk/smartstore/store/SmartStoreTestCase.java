@@ -31,11 +31,13 @@ import android.database.Cursor;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.salesforce.androidsdk.analytics.EventBuilderHelper;
 import com.salesforce.androidsdk.util.JSONTestHelper;
+
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SQLiteOpenHelper;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import net.sqlcipher.database.SQLiteDatabase;
-import net.sqlcipher.database.SQLiteOpenHelper;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -57,9 +59,9 @@ public abstract class SmartStoreTestCase {
 	public void setUp() throws Exception {
 		EventBuilderHelper.enableDisable(false);
 		targetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-		dbOpenHelper = DBOpenHelper.getOpenHelper(targetContext, null);
-		dbHelper = DBHelper.getInstance(dbOpenHelper.getWritableDatabase(getEncryptionKey()));
-		store = new SmartStore(dbOpenHelper, getEncryptionKey());
+		dbOpenHelper = DBOpenHelper.getOpenHelper(targetContext, null, getEncryptionKey());
+		dbHelper = DBHelper.getInstance(dbOpenHelper.getWritableDatabase());
+		store = new SmartStore(dbOpenHelper);
 	}
 
 	protected abstract String getEncryptionKey();
@@ -79,7 +81,7 @@ public abstract class SmartStoreTestCase {
 	 */
 	protected boolean hasTable(String tableName) {
 		Cursor c = null;
-		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 		try {
 			c = DBHelper.getInstance(db).query(db, "sqlite_master", null, null, null, "type = ? and name = ?", "table", tableName);
 			return c.getCount() == 1;
@@ -96,7 +98,7 @@ public abstract class SmartStoreTestCase {
      */
 	protected void checkColumns(String tableName, List<String> expectedColumnNames) {
 		Cursor c = null;
-		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 		try {
 			List<String> actualColumnNames = new ArrayList<>();
 			c = db.rawQuery(String.format("PRAGMA table_info(%s)", tableName), null);
@@ -128,7 +130,7 @@ public abstract class SmartStoreTestCase {
 	 */
 	protected void checkCreateTableStatement(String tableName, String subStringExpected) {
 		Cursor c = null;
-		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 		try {
 			List<String> actualSqlStatements = new ArrayList<>();
 			c = db.rawQuery(String.format("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='%s' ORDER BY name", tableName), null);
@@ -152,7 +154,7 @@ public abstract class SmartStoreTestCase {
      */
     protected void checkDatabaseIndexes(String tableName, List<String> expectedSqlStatements) {
         Cursor c = null;
-        final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+        final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
         try {
             List<String> actualSqlStatements = new ArrayList<>();
             c = db.rawQuery(String.format("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='%s' ORDER BY name", tableName), null);
@@ -213,7 +215,7 @@ public abstract class SmartStoreTestCase {
 	 * @return table name for soup
 	 */
 	protected String getSoupTableName(String soupName) {
-		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase(getEncryptionKey());
+		final SQLiteDatabase db = dbOpenHelper.getWritableDatabase();
 		return DBHelper.getInstance(db).getSoupTableName(db, soupName);
 	}
 

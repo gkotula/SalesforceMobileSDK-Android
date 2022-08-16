@@ -574,49 +574,49 @@ public class AlterSoupLongOperation extends LongOperation {
 			db.execSQL(copyToFtsTable);
 		}
 
-		if (oldSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE) && !newSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
-			// External to internal storage
-			Cursor c = null;
-			try {
-				c = db.query(getOldSoupTableName(), new String[] { SmartStore.ID_COL }, null, null, null, null, null);
-				if (c.moveToFirst()) {
-					Long[] ids = new Long[c.getCount()];
-					int counter = 0;
-					do {
-						ids[counter++] = c.getLong(0);
-					} while (c.moveToNext());
-
-					for (long id : ids) {
-                        String entry = ((DBOpenHelper) store.dbOpenHelper).loadSoupBlobAsString(soupTableName, id, store.encryptionKey);
-                        ContentValues contentValues = new ContentValues();
-                        contentValues.put(SmartStore.SOUP_COL, entry);
-                        DBHelper.getInstance(db).update(db, soupTableName, contentValues, SmartStore.ID_PREDICATE, id + "");
-						((DBOpenHelper) store.dbOpenHelper).removeSoupBlob(soupTableName, new Long[] {id});
-					}
-				}
-			} finally {
-				if (c != null) {
-					c.close();
-				}
-			}
-		} else if (!oldSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE) && newSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
-			// Internal to external storage
-			Cursor c = null;
-			try {
-				c = db.query(getOldSoupTableName(), new String[] { SmartStore.ID_COL, SmartStore.SOUP_COL }, null, null, null, null, null);
-				if (c.moveToFirst()) {
-					do {
-						long id = c.getLong(0);
-						String entry = c.getString(1);
-						((DBOpenHelper) store.dbOpenHelper).saveSoupBlobFromString(soupTableName, id, entry, store.encryptionKey);
-					} while (c.moveToNext());
-				}
-			} finally {
-				if (c != null) {
-					c.close();
-				}
-			}
-		}
+//		if (oldSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE) && !newSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
+//			// External to internal storage
+//			Cursor c = null;
+//			try {
+//				c = db.query(getOldSoupTableName(), new String[] { SmartStore.ID_COL }, null, null, null, null, null);
+//				if (c.moveToFirst()) {
+//					Long[] ids = new Long[c.getCount()];
+//					int counter = 0;
+//					do {
+//						ids[counter++] = c.getLong(0);
+//					} while (c.moveToNext());
+//
+//					for (long id : ids) {
+//                        String entry = ((DBOpenHelper) store.dbOpenHelper).loadSoupBlobAsString(soupTableName, id, store.encryptionKey);
+//                        ContentValues contentValues = new ContentValues();
+//                        contentValues.put(SmartStore.SOUP_COL, entry);
+//                        DBHelper.getInstance(db).update(db, soupTableName, contentValues, SmartStore.ID_PREDICATE, id + "");
+//						((DBOpenHelper) store.dbOpenHelper).removeSoupBlob(soupTableName, new Long[] {id});
+//					}
+//				}
+//			} finally {
+//				if (c != null) {
+//					c.close();
+//				}
+//			}
+//		} else if (!oldSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE) && newSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
+//			// Internal to external storage
+//			Cursor c = null;
+//			try {
+//				c = db.query(getOldSoupTableName(), new String[] { SmartStore.ID_COL, SmartStore.SOUP_COL }, null, null, null, null, null);
+//				if (c.moveToFirst()) {
+//					do {
+//						long id = c.getLong(0);
+//						String entry = c.getString(1);
+//						((DBOpenHelper) store.dbOpenHelper).saveSoupBlobFromString(soupTableName, id, entry, store.encryptionKey);
+//					} while (c.moveToNext());
+//				}
+//			} finally {
+//				if (c != null) {
+//					c.close();
+//				}
+//			}
+//		}
 	}
 	
 	/**

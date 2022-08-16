@@ -51,7 +51,7 @@ import java.util.concurrent.Executors
  */
 open class SmartStore(
     @JvmField val dbOpenHelper: SQLiteOpenHelper,
-    @JvmField val encryptionKey: String?
+//    @JvmField val encryptionKey: String?
 ) {
     // Backing database
     private var hasResumedLongOperations = false
