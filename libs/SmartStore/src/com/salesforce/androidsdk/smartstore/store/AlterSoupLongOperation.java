@@ -90,12 +90,6 @@ public class AlterSoupLongOperation extends LongOperation {
 	// Last step completed
 	private AlterSoupStep afterStep;
 
-	// New soup spec
-	private SoupSpec newSoupSpec;
-
-	// Old soup spec
-	private SoupSpec oldSoupSpec;
-
 	// New index specs
 	private IndexSpec[] newIndexSpecs;
 	
@@ -133,61 +127,35 @@ public class AlterSoupLongOperation extends LongOperation {
 	 */
 	public AlterSoupLongOperation(SmartStore store, String soupName, IndexSpec[] newIndexSpecs,
 		boolean reIndexData) throws JSONException {
-		this(store, soupName, new SoupSpec(soupName), newIndexSpecs, reIndexData);
-	}
+		synchronized(SmartStore.class) {
+			// Setting store field
+			this.store = store;
 
-	/**
-	 * Constructor
-	 * 
-	 * @param store
-	 * @param soupName
-	 * @param newSoupSpec
-	 * @param newIndexSpecs
-	 * @param reIndexData
-	 * @throws JSONException
-	 *
-	 * Deprecated: we are removing external storage and soup spec in 11.0 - use other constructor instead
-	 */
-	@Deprecated
-	public AlterSoupLongOperation(SmartStore store, String soupName, SoupSpec newSoupSpec, IndexSpec[] newIndexSpecs,
-			boolean reIndexData) throws JSONException {
-		
-    	synchronized(SmartStore.class) {
-    		// Setting store field
-    		this.store = store;
-    		
-    		// Setting db field
-    		this.db = store.getDatabase();
-    		
-    		// Setting soupName field
-    		this.soupName = soupName;
+			// Setting db field
+			this.db = store.getDatabase();
 
-    		// Setting new soup spec
-    		this.newSoupSpec = newSoupSpec;
-
-    		// Get old soup spec
-    		List<String> features = DBHelper.getInstance(db).getFeatures(db, soupName);
-    		this.oldSoupSpec = new SoupSpec(soupName, features.size() == 0 ? null : features.toArray(new String[features.size()]));
+			// Setting soupName field
+			this.soupName = soupName;
 
 			// Get backing table for soup
-	        this.soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName);
-	        if (soupTableName == null) throw new SmartStoreException("Soup: " + soupName + " does not exist");
-	        
-	        // Setting newIndexSpecs field
-	        this.newIndexSpecs = newIndexSpecs;
-	        
-	        // Setting reIndexData field
-	        this.reIndexData = reIndexData;
-	        
-	        // Get old indexSpecs
-	        this.oldIndexSpecs = DBHelper.getInstance(db).getIndexSpecs(db, soupName);
+			this.soupTableName = DBHelper.getInstance(db).getSoupTableName(db, soupName);
+			if (soupTableName == null) throw new SmartStoreException("Soup: " + soupName + " does not exist");
 
-    		// Create row in alter status table - auto commit
-    		this.rowId = createLongOperationDbRow();
-	        
-    		// Last step completed
-    		this.afterStep = AlterSoupStep.STARTING;
-    	}
+			// Setting newIndexSpecs field
+			this.newIndexSpecs = newIndexSpecs;
+
+			// Setting reIndexData field
+			this.reIndexData = reIndexData;
+
+			// Get old indexSpecs
+			this.oldIndexSpecs = DBHelper.getInstance(db).getIndexSpecs(db, soupName);
+
+			// Create row in alter status table - auto commit
+			this.rowId = createLongOperationDbRow();
+
+			// Last step completed
+			this.afterStep = AlterSoupStep.STARTING;
+		}
 	}
 	
 	/* (non-Javadoc)
@@ -223,8 +191,6 @@ public class AlterSoupLongOperation extends LongOperation {
 		this.rowId = rowId;
 		this.afterStep = AlterSoupStep.valueOf(statusStr);
 		this.soupName = details.getString(SOUP_NAME);
-		this.newSoupSpec = SoupSpec.fromJSON(details.optJSONObject(NEW_SOUP_SPEC));
-		this.oldSoupSpec = SoupSpec.fromJSON(details.optJSONObject(OLD_SOUP_SPEC));
 		this.newIndexSpecs = IndexSpec.fromJSON(details.getJSONArray(NEW_INDEX_SPECS));
 		this.oldIndexSpecs = IndexSpec.fromJSON(details.getJSONArray(OLD_INDEX_SPECS));
 		this.reIndexData = details.getBoolean(RE_INDEX_DATA);
@@ -461,8 +427,6 @@ public class AlterSoupLongOperation extends LongOperation {
 		JSONObject details = new JSONObject();
     	details.put(SOUP_NAME, soupName);
     	details.put(SOUP_TABLE_NAME, soupTableName);
-    	details.put(OLD_SOUP_SPEC, oldSoupSpec.toJSON());
-    	details.put(NEW_SOUP_SPEC, newSoupSpec.toJSON());
     	details.put(OLD_INDEX_SPECS, IndexSpec.toJSON(oldIndexSpecs));
     	details.put(NEW_INDEX_SPECS, IndexSpec.toJSON(newIndexSpecs));
     	details.put(RE_INDEX_DATA, reIndexData);
@@ -510,12 +474,7 @@ public class AlterSoupLongOperation extends LongOperation {
 
 		// Adding core columns
 		String[] columns;
-		if (newSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE) || oldSoupSpec.getFeatures().contains(SoupSpec.FEATURE_EXTERNAL_STORAGE)) {
-			// either the new or old soup spec contains external storage, so do not add soup column to directly copy
-			columns = new String[] {SmartStore.ID_COL, SmartStore.CREATED_COL, SmartStore.LAST_MODIFIED_COL};
-		} else {
-			columns = new String[] {SmartStore.ID_COL, SmartStore.SOUP_COL, SmartStore.CREATED_COL, SmartStore.LAST_MODIFIED_COL};
-		}
+		columns = new String[] {SmartStore.ID_COL, SmartStore.SOUP_COL, SmartStore.CREATED_COL, SmartStore.LAST_MODIFIED_COL};
 		for (String column : columns) {
 			oldColumns.add(column);
 			newColumns.add(column);

@@ -39,7 +39,6 @@ import com.salesforce.androidsdk.smartstore.store.QuerySpec;
 import com.salesforce.androidsdk.smartstore.store.QuerySpec.QueryType;
 import com.salesforce.androidsdk.smartstore.store.SmartStore;
 import com.salesforce.androidsdk.smartstore.store.SmartStore.SmartStoreException;
-import com.salesforce.androidsdk.smartstore.store.SoupSpec;
 import com.salesforce.androidsdk.smartstore.store.StoreCursor;
 import com.salesforce.androidsdk.smartstore.ui.SmartStoreInspectorActivity;
 
@@ -67,7 +66,6 @@ import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.PATHS;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.QUERY_SPEC;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.RE_INDEX_DATA;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.SOUP_NAME;
-import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.SOUP_SPEC;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.STORE_NAME;
 import static com.salesforce.androidsdk.phonegap.plugin.PluginConstants.TYPE;
 
@@ -454,18 +452,10 @@ public class SmartStorePlugin extends ForcePlugin {
 		// Parse args
 		JSONObject arg0 = args.getJSONObject(0);
 		String soupName = arg0.isNull(SOUP_NAME) ? null : arg0.getString(SOUP_NAME);
-		SoupSpec soupSpec = getSoupSpecFromArg(arg0);
 		IndexSpec[] indexSpecs = getIndexSpecsFromArg(arg0);
 		final SmartStore smartStore = getSmartStore(arg0);
-
-		// Run register
-		if (soupSpec != null) {
-			smartStore.registerSoup(soupSpec.getSoupName(), indexSpecs);
-		} else {
-			smartStore.registerSoup(soupName, indexSpecs);
-		}
-
-		callbackContext.success(soupSpec != null ? soupSpec.getSoupName() : soupName);
+		smartStore.registerSoup(soupName, indexSpecs);
+		callbackContext.success(soupName);
 	}
 
 	/**
@@ -598,17 +588,10 @@ public class SmartStorePlugin extends ForcePlugin {
 		// Parse args
 		JSONObject arg0 = args.getJSONObject(0);
 		String soupName = arg0.getString(SOUP_NAME);
-		SoupSpec soupSpec = getSoupSpecFromArg(arg0);
 		IndexSpec[] indexSpecs = getIndexSpecsFromArg(arg0);
 		boolean reIndexData = arg0.getBoolean(RE_INDEX_DATA);
 		final SmartStore smartStore = getSmartStore(arg0);
-
-		// Run alter
-		if (soupSpec != null) {
-			smartStore.alterSoup(soupName, soupSpec, indexSpecs, reIndexData);
-		} else {
-			smartStore.alterSoup(soupName, indexSpecs, reIndexData);
-		}
+		smartStore.alterSoup(soupName, indexSpecs, reIndexData);
 		callbackContext.success(soupName);
 	}
 
@@ -670,14 +653,7 @@ public class SmartStorePlugin extends ForcePlugin {
      * @throws Exception
      */
 	private void getSoupSpec(JSONArray args, CallbackContext callbackContext) throws Exception {
-		// Parse args
-		JSONObject arg0 = args.getJSONObject(0);
-		String soupName = arg0.getString(SOUP_NAME);
-
-		// Get soup specs
-		SmartStore smartStore = getSmartStore(arg0);
-		SoupSpec soupSpec = smartStore.getSoupSpec(soupName);
-		callbackContext.success(soupSpec.toJSON());
+		callbackContext.success(new JSONObject());
 	}
 
     /**
@@ -727,17 +703,6 @@ public class SmartStorePlugin extends ForcePlugin {
     private IndexSpec[] getIndexSpecsFromArg(JSONObject arg0) throws JSONException {
         JSONArray indexesJson = arg0.getJSONArray(INDEXES);
         return IndexSpec.fromJSON(indexesJson);
-    }
-
-    /**
-     * Build soup spec from json object argument
-     * @param arg0
-     * @return
-     * @throws JSONException
-     */
-    private SoupSpec getSoupSpecFromArg(JSONObject arg0) throws JSONException {
-        JSONObject soupSpecObj = arg0.optJSONObject(SOUP_SPEC);
-        return soupSpecObj == null ? null : SoupSpec.fromJSON(soupSpecObj);
     }
 
 	private void sendStoreConfig(CallbackContext callbackContext,List<String>dbNames, boolean isGlobal)  throws JSONException {

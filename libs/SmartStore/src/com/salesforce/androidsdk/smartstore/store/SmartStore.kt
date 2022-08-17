@@ -178,23 +178,6 @@ open class SmartStore @JvmOverloads constructor(
     }
 
     /**
-     * DEPRECATED: This is a no-op.
-     * Register a soup using the given soup specifications. This allows the soup to use extra features such as external storage.
-     *
-     * Create table for soupName with a column for the soup itself and columns for paths specified in indexSpecs
-     * Create indexes on the new table to make lookup faster
-     * Create rows in soup index map table for indexSpecs
-     * @param soupSpec
-     * @param indexSpecs
-     */
-    @Deprecated(
-        "We are removing external storage and soup spec in 11.0",
-        replaceWith = ReplaceWith("registerSoup(soupSpec.soupName, indexSpecs)")
-    )
-    open fun registerSoupWithSpec(soupSpec: SoupSpec, indexSpecs: Array<IndexSpec>) {
-    }
-
-    /**
      * Log the soup event.
      * @param soupSpec
      * @param indexSpecs
@@ -405,31 +388,6 @@ open class SmartStore @JvmOverloads constructor(
     open fun alterSoup(soupName: String?, indexSpecs: Array<IndexSpec?>?, reIndexData: Boolean) {
 //        alterSoup(soupName, SoupSpec(soupName, *arrayOfNulls(0)), indexSpecs, reIndexData)
         TODO("alterSoup")
-    }
-
-    /**
-     * Alter soup with new soup spec.
-     *
-     * @param soupName name of soup to alter
-     * @param soupSpec
-     * @param indexSpecs array of index specs
-     * @param reIndexData
-     * @throws JSONException
-     */
-    @Deprecated(
-        message = "We are removing external storage and soup spec in 11.0",
-        replaceWith = ReplaceWith("alterSoup(soupName, indexSpecs, reIndexData)")
-    )
-    @Throws(JSONException::class)
-    open fun alterSoup(
-        soupName: String?,
-        soupSpec: SoupSpec?,
-        indexSpecs: Array<IndexSpec?>?,
-        reIndexData: Boolean
-    ) {
-        TODO("alterSoup")
-//        val operation = AlterSoupLongOperation(this, soupName, soupSpec, indexSpecs, reIndexData)
-//        operation.run()
     }
 
     /**
@@ -701,18 +659,6 @@ open class SmartStore @JvmOverloads constructor(
 //                return soupNames
 //            }
         }
-
-    /**
-     * Returns the entire SoupSpec of the given soup.
-     * @param soupName
-     * @return SoupSpec for given soup name.
-     */
-    @Deprecated(message = "We are removing external storage and soup spec in 11.0")
-    open fun getSoupSpec(soupName: String?): SoupSpec {
-//        val features = DBHelper.getInstance(database).getFeatures(database, soupName)
-//        return SoupSpec(soupName, *features.toTypedArray())
-        TODO("getSoupSpec")
-    }
 
     /**
      * Run a query given by its query spec

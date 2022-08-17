@@ -567,25 +567,11 @@ public class DBHelper {
 	 * @param db
 	 * @param soupName
 	 * @return A list of features that belong to the given soup.
+	 * @deprecated The last remaining feature was external storage, and that has been removed in 11.
 	 */
+	@Deprecated
 	protected List<String> getFeaturesFromDb(SQLiteDatabase db, String soupName) {
-		Cursor cursor = null;
-		List<String> features = new ArrayList<>();
-		try {
-			cursor = query(db, SmartStore.SOUP_ATTRS_TABLE, SoupSpec.ALL_FEATURES, null, null, SmartStore.SOUP_NAME_PREDICATE, soupName);
-			if (!cursor.moveToFirst()) {
-				return null;
-			}
-			for (String feature : SoupSpec.ALL_FEATURES) {
-				int enabled = cursor.getInt(cursor.getColumnIndex(feature));
-				if (enabled > 0) {
-					features.add(feature);
-				}
-			}
-		} finally {
-			safeClose(cursor);
-		}
-		return features;
+		return null;
 	}
 
     /**

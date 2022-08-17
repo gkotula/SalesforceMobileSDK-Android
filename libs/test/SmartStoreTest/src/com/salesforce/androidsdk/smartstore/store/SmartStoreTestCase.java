@@ -187,19 +187,6 @@ public abstract class SmartStoreTestCase {
 		Assert.assertTrue("Query plan: " + detail + " - not starting with " + expectedDetailPrefix, detail.startsWith(expectedDetailPrefix));
     }
 
-	protected void checkFileSystem(String soupName, long[] expectedIds, boolean shouldExist) {
-		String soupTableName = getSoupTableName(soupName);
-		for (long expectedId : expectedIds) {
-			File file = ((DBOpenHelper) dbOpenHelper).getSoupBlobFile(soupTableName, expectedId);
-			if (shouldExist) {
-				Assert.assertTrue("External file for " + expectedId + " should exist", file.exists());
-			}
-			else {
-				Assert.assertFalse("External file for " + expectedId + " should not exist", file.exists());
-			}
-		}
-	}
-
 	/**
 	 * Close cursor if not null
 	 * @param c

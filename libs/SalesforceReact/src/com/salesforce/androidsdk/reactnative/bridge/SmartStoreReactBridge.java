@@ -42,7 +42,6 @@ import com.salesforce.androidsdk.smartstore.store.DBOpenHelper;
 import com.salesforce.androidsdk.smartstore.store.IndexSpec;
 import com.salesforce.androidsdk.smartstore.store.QuerySpec;
 import com.salesforce.androidsdk.smartstore.store.SmartStore;
-import com.salesforce.androidsdk.smartstore.store.SoupSpec;
 import com.salesforce.androidsdk.smartstore.store.StoreCursor;
 
 
@@ -312,13 +311,8 @@ public class SmartStoreReactBridge extends ReactContextBaseJavaModule {
 			final SmartStore smartStore = getSmartStore(args);
 			String soupName = args.isNull(SOUP_NAME) ? null : args.getString(SOUP_NAME);
 			IndexSpec[] indexSpecs = getIndexSpecsFromArg(args);
-			SoupSpec soupSpec = getSoupSpecFromArg(args);
 
-			if (soupSpec != null) {
-                smartStore.registerSoup(soupSpec.getSoupName(), indexSpecs);
-            } else {
-                smartStore.registerSoup(soupName, indexSpecs);
-            }
+			smartStore.registerSoup(soupName, indexSpecs);
 			ReactBridgeHelper.invoke(successCallback, soupName);
 		} catch (Exception e) {
             SalesforceReactLogger.e(TAG, "registerSoup call failed", e);
@@ -487,14 +481,9 @@ public class SmartStoreReactBridge extends ReactContextBaseJavaModule {
 			final SmartStore smartStore = getSmartStore(args);
 			String soupName = args.getString(SOUP_NAME);
 			IndexSpec[] indexSpecs = getIndexSpecsFromArg(args);
-			SoupSpec soupSpec = getSoupSpecFromArg(args);
 			boolean reIndexData = args.getBoolean(RE_INDEX_DATA);
 
-			if (soupSpec != null) {
-				smartStore.alterSoup(soupName, soupSpec, indexSpecs, reIndexData);
-			} else {
-				smartStore.alterSoup(soupName, indexSpecs, reIndexData);
-			}
+			 smartStore.alterSoup(soupName, indexSpecs, reIndexData);
 			ReactBridgeHelper.invoke(successCallback, soupName);
 		} catch (Exception e) {
             SalesforceReactLogger.e(TAG, "alterSoup call failed", e);
@@ -570,20 +559,7 @@ public class SmartStoreReactBridge extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getSoupSpec(ReadableMap args, final Callback successCallback,
                                   final Callback errorCallback) {
-        try {
-
-            // Parse args.
-            final String soupName = args.getString(SOUP_NAME);
-            final SmartStore smartStore = getSmartStore(args);
-
-            // Get soup specs.
-            final SoupSpec soupSpec = smartStore.getSoupSpec(soupName);
-            final JSONObject soupSpecJSON = soupSpec.toJSON();
-            ReactBridgeHelper.invoke(successCallback, soupSpecJSON);
-        } catch (Exception e) {
-            SalesforceReactLogger.e(TAG, "getSoupSpec call failed", e);
-            errorCallback.invoke(e.toString());
-        }
+		ReactBridgeHelper.invoke(successCallback, new JSONObject());
     }
 
 
@@ -748,16 +724,5 @@ public class SmartStoreReactBridge extends ReactContextBaseJavaModule {
 	private IndexSpec[] getIndexSpecsFromArg(ReadableMap args) throws JSONException {
 		JSONArray indexesJson = new JSONArray(ReactBridgeHelper.toJavaList(args.getArray(INDEXES)));
 		return IndexSpec.fromJSON(indexesJson);
-	}
-
-	/**
-	 * Build soup spec from javascript argument
-	 * @param args
-	 * @return
-	 * @throws JSONException
-     */
-	private SoupSpec getSoupSpecFromArg(ReadableMap args) throws JSONException {
-		JSONObject soupSpecJson = args.hasKey(SOUP_SPEC) ? new JSONObject(ReactBridgeHelper.toJavaMap(args.getMap(SOUP_SPEC))) : null;
-		return soupSpecJson == null ? null : SoupSpec.fromJSON(soupSpecJson);
 	}
 }

@@ -1550,26 +1550,4 @@ public class SmartStoreTest extends SmartStoreTestCase {
 		// Clean up
 		db.execSQL("DROP TABLE " + NEW_TEST_TABLE);
 	}
-
-	/**
-	 * Ensure correct soup spec is returned from getSoupSpec
-	 */
-    @Test
-	public void testGetSoupSpec() throws JSONException {
-		final String SOUP_SPEC_TEST = "soup_spec_test";
-		IndexSpec[] indexSpecs = new IndexSpec[] {new IndexSpec("index", Type.string)};
-		SoupSpec TEST_SPEC = new SoupSpec(SOUP_SPEC_TEST, SoupSpec.FEATURE_EXTERNAL_STORAGE);
-		store.registerSoupWithSpec(TEST_SPEC, indexSpecs);
-
-		// Act
-		SoupSpec result = store.getSoupSpec(TEST_SPEC.getSoupName());
-
-		// Verify the result
-        Assert.assertEquals("Soup name in soup spec is incorrect", SOUP_SPEC_TEST, result.getSoupName());
-        Assert.assertEquals("Feature set in soup spec is incorrect", SoupSpec.FEATURE_EXTERNAL_STORAGE, result.getFeatures().get(0));
-
-		// Verify JSON form
-        Assert.assertEquals("Soup name in json of soup spec is incorrect", SOUP_SPEC_TEST, result.toJSON().getString("name"));
-        Assert.assertEquals("Feature set in json of soup spec is incorrect", SoupSpec.FEATURE_EXTERNAL_STORAGE, result.toJSON().getJSONArray("features").get(0));
-	}
 }
