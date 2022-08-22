@@ -104,6 +104,7 @@ public class DBOpenHelperTest {
 		UserAccount testAcct = getTestUserAccount();
 		DBOpenHelper helper = DBOpenHelper.getOpenHelper(targetContext, "somedb", testAcct, null, "");
 		SQLiteDatabase db = helper.getWritableDatabase();
+		db.query("PRAGMA cipher_migrate");
 		String dbName = getBaseName(db);
         Assert.assertTrue("Database name does not contain org id.",dbName.contains(TEST_ORG_ID));
         Assert.assertTrue("Database name does not contain user id.",dbName.contains(TEST_USER_ID));
@@ -145,6 +146,7 @@ public class DBOpenHelperTest {
 		DBOpenHelper helper = DBOpenHelper.getOpenHelper(targetContext, null, "");
 		SQLiteDatabase db = helper.getWritableDatabase();
 		String dbName = getBaseName(db);
+		Assert.assertTrue("Database should exist.", databaseExists(targetContext, dbName));
 		DBOpenHelper.deleteDatabase(targetContext, null);
         Assert.assertFalse("Database should not exist.", databaseExists(targetContext, dbName));
 	}

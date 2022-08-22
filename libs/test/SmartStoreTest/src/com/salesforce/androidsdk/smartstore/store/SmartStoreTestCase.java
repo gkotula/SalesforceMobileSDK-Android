@@ -28,6 +28,8 @@ package com.salesforce.androidsdk.smartstore.store;
 
 import android.content.Context;
 import android.database.Cursor;
+import android.util.Log;
+
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.salesforce.androidsdk.analytics.EventBuilderHelper;
 import com.salesforce.androidsdk.util.JSONTestHelper;
@@ -59,8 +61,11 @@ public abstract class SmartStoreTestCase {
 	public void setUp() throws Exception {
 		EventBuilderHelper.enableDisable(false);
 		targetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+		Log.d(TAG, "setUp() - creating DBOpenHelper");
 		dbOpenHelper = DBOpenHelper.getOpenHelper(targetContext, null, getEncryptionKey());
+		Log.d(TAG, "setUp() - creating DBHelper");
 		dbHelper = DBHelper.getInstance(dbOpenHelper.getWritableDatabase());
+		Log.d(TAG, "setUp() - creating SmartStore");
 		store = new SmartStore(dbOpenHelper);
 	}
 
@@ -221,4 +226,6 @@ public abstract class SmartStoreTestCase {
 	protected void registerSoup(SmartStore store, String soupName, IndexSpec[] indexSpecs) {
 		store.registerSoup(soupName, indexSpecs);
 	}
+
+	private static final String TAG = "SmartStoreTestCase";
 }

@@ -26,15 +26,15 @@
  */
 package com.salesforce.androidsdk.smartstore.store;
 
-import static com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager.GLOBAL_SUFFIX;
+import static com.salesforce.androidsdk.smartstore.store.SQLiteDatabaseExtKt.fullCheckpointNow;
 
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.salesforce.androidsdk.accounts.UserAccount;
 import com.salesforce.androidsdk.analytics.EventBuilderHelper;
 import com.salesforce.androidsdk.analytics.security.Encryptor;
-import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager;
 import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger;
 import com.salesforce.androidsdk.util.ManagedFilesHelper;
 
@@ -194,7 +194,9 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 				null, // factory
 				DB_VERSION, // Current DB version
 				0, // minimumSupportedVersion
-				null, // errorHandler
+				dbObj -> {
+					Log.e("DBOpenHelper", "DB corruption detected!");
+				}, // errorHandler
 				new DBHook(),
 				true // enableWAL
 		);
@@ -217,11 +219,6 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 	}
 
 	@Override
-	public void onConfigure(final SQLiteDatabase db) {
-		db.enableWriteAheadLogging();
-	}
-
-	@Override
 	public void onCreate(SQLiteDatabase db) {
 
 		/*
@@ -234,6 +231,7 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 */
 //		db.setLockingEnabled(false); // no-op in new version
 		SmartStore.createMetaTables(db);
+		Log.d("DBOpenHelper", "onCreate finishing");
 	}
 
 	@Override
@@ -248,6 +246,14 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 * manage locking at our level anyway.
 		 */
 //		db.setLockingEnabled(false); // no-op in new version
+		db.query("PRAGMA cipher_migrate");
+	}
+
+	@Override
+	public void onOpen(SQLiteDatabase db) {
+//		fullCheckpointNow(db);
+//		db.query("SELECT name FROM sqlite_schema WHERE type = 'table'").moveToNext();
+		Log.d(TAG, "onOpen(db = " + db.toString() + ")");
 	}
 
 	/**
@@ -400,6 +406,9 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		public void preKey(SQLiteConnection connection) {
 			// Using sqlcipher 2.x kdf iter because 3.x default (64000) and 4.x default (256000) are too slow
 			// => should open 2.x databases without any migration
+			connection.executeForLong("PRAGMA cipher_log = logcat", null, null);
+			connection.executeForLong("PRAGMA cipher_log_level = DEBUG", null, null);
+			Log.d(TAG, "preKey() - setting KDF Iterations");
 			connection.execute("PRAGMA cipher_default_kdf_iter = 4000", null, null);
 		}
 
@@ -409,7 +418,11 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 		 */
 		@Override
 		public void postKey(SQLiteConnection connection) {
-			connection.executeForChangedRowCount("PRAGMA cipher_migrate", null, null);
+//			try {
+//				connection.executeForLong("PRAGMA cipher_migrate", null, null);
+//			} catch (final SQLiteDoneException ignored) {
+//				// no migration necessary
+//			}
 		}
 	}
 
@@ -455,6 +468,14 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 			}
 		}
 		return size;
+	}
+
+	@Override
+	public SQLiteDatabase getWritableDatabase() {
+		Log.d(TAG, "getWritableDatabase() - BEGIN");
+		final SQLiteDatabase db = super.getWritableDatabase();
+		Log.d(TAG, "getWritableDatabase() - FINISH");
+		return db;
 	}
 
 	/**

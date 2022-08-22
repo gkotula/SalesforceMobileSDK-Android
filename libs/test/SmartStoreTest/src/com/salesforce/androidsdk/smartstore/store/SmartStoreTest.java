@@ -28,6 +28,8 @@ package com.salesforce.androidsdk.smartstore.store;
 
 import android.database.Cursor;
 import android.os.SystemClock;
+import android.util.Log;
+
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.MediumTest;
 import com.salesforce.androidsdk.smartstore.store.QuerySpec.Order;
@@ -112,7 +114,7 @@ public class SmartStoreTest extends SmartStoreTestCase {
 	 */
 	@Test
 	public void testSQLCipherVersion() {
-		Assert.assertEquals("Wrong sqlcipher version", "4.5.1 community", store.getSQLCipherVersion());
+		Assert.assertEquals("Wrong sqlcipher version", "4.5.2 community", store.getSQLCipherVersion());
 	}
 
 	/**
@@ -1330,6 +1332,7 @@ public class SmartStoreTest extends SmartStoreTestCase {
 	 */
     @Test
 	public void testGetDatabaseSize() throws JSONException {
+		Log.d(TAG, "testGetDatabaseSize()");
 		int initialSize = store.getDatabaseSize();
 		for (int i=0; i<100; i++) {
 			JSONObject soupElt = new JSONObject("{'key':'abcd" + i + "', 'value':'va" + i + "', 'otherValue':'ova" + i + "'}");
@@ -1550,4 +1553,6 @@ public class SmartStoreTest extends SmartStoreTestCase {
 		// Clean up
 		db.execSQL("DROP TABLE " + NEW_TEST_TABLE);
 	}
+
+	private static final String TAG = "SmartStoreTest";
 }

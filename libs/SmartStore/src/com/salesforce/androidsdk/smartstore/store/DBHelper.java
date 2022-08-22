@@ -30,6 +30,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.SQLException;
+import android.util.Log;
 import android.util.LruCache;
 
 import com.salesforce.androidsdk.accounts.UserAccount;
@@ -379,6 +380,7 @@ public class DBHelper {
 	 * @return
 	 */
 	public Cursor query(SQLiteDatabase db, String table, String[] columns, String orderBy, String limit, String whereClause, String... whereArgs) {
+		Log.d(TAG, "query() - db = " + db.toString() + ", table = " + table + ", columns = " + Arrays.toString(columns) + ", orderBy = " + orderBy + ", limit = " + limit + ", whereClause = " + whereClause);
 		return db.query(table, columns, whereClause, whereArgs, null, null, orderBy, limit);
 	}
 
@@ -632,4 +634,6 @@ public class DBHelper {
             cursor.close();
         }
     }
+
+	private static final String TAG = "DBHelper";
 }
