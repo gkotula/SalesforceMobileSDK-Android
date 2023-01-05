@@ -108,7 +108,7 @@ public class RestResponse {
 	 * Must be called before returning control to the UI thread
 	 * @throws IOException
 	 */
-	public void consume() throws IOException {
+	public synchronized void consume() throws IOException {
 		if (!consumed && response != null) {
 			try {
 				ResponseBody body = response.body();
@@ -134,7 +134,7 @@ public class RestResponse {
 	 * Fully consume a response and swallow any exceptions thrown during the process.
 	 * @see RestResponse#consume()
 	 */
-	public void consumeQuietly() {
+	public synchronized void consumeQuietly() {
 		try {
 			consume();
 		} catch (Exception e) {
@@ -146,7 +146,7 @@ public class RestResponse {
 	 * @return byte[] for entire response
 	 * @throws IOException
 	 */
-	public byte[] asBytes() throws IOException {
+	public synchronized byte[] asBytes() throws IOException {
 		if (responseAsBytes == null) {
 			consume();
 		}
@@ -167,7 +167,7 @@ public class RestResponse {
 	 * @return string for entire response
 	 * @throws IOException
 	 */
-	public String asString() throws IOException {
+	public synchronized String asString() throws IOException {
 		if (responseAsString == null) {
 			byte[] bytes = asBytes(); // will also compute responseCharSet
 			responseAsString = new String(bytes, responseCharSet);
@@ -182,7 +182,7 @@ public class RestResponse {
 	 * @throws JSONException
 	 * @throws IOException
 	 */
-	public JSONObject asJSONObject() throws JSONException, IOException {
+	public synchronized JSONObject asJSONObject() throws JSONException, IOException {
 		if (responseAsJSONObject == null) {
 			responseAsJSONObject = new JSONObject(asString());
 		}
@@ -196,7 +196,7 @@ public class RestResponse {
 	 * @throws JSONException
 	 * @throws IOException
 	 */
-	public JSONArray asJSONArray() throws JSONException, IOException {
+	public synchronized JSONArray asJSONArray() throws JSONException, IOException {
 		if (responseAsJSONArray == null) {
 			responseAsJSONArray = new JSONArray(asString());
 		}
@@ -217,7 +217,7 @@ public class RestResponse {
 	 * @return an {@link InputStream} from the response content
 	 * @throws IOException if the stream could not be created or has already been consumed
 	 */
-	public InputStream asInputStream() throws IOException {
+	public synchronized InputStream asInputStream() throws IOException {
 		if (consumed) {
 			throw new IOException("Content has been consumed");
 		}
@@ -236,7 +236,7 @@ public class RestResponse {
 	 * It is the responsibility of the application to close the response after consuming it.
 	 * @return raw response as {@link Response}
 	 */
-	public Response getRawResponse() {
+	public synchronized Response getRawResponse() {
 		if (!consumed) {
 			return response;
 		} else {
