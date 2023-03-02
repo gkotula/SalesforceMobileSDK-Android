@@ -31,6 +31,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
+import com.salesforce.androidsdk.config.BootConfig;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -51,13 +52,14 @@ public class HttpAccess {
 
     // Timeouts.
     public static final int CONNECT_TIMEOUT = 60;
-    public static final int READ_TIMEOUT = 20;
+    public static final int DEFAULT_READ_TIMEOUT_SECONDS = 20;
 
     // User agent header name.
 	private static final String USER_AGENT = "User-Agent";
 
     private String userAgent;
     private OkHttpClient okHttpClient;
+    private final long readTimeoutMillis;
 
     // Connection manager.
     private final ConnectivityManager conMgr;
@@ -86,12 +88,13 @@ public class HttpAccess {
         // Only null in tests.
         if (app == null) {
             conMgr = null;
+            readTimeoutMillis = DEFAULT_READ_TIMEOUT_SECONDS * 1000L;
         } else {
 
             // Gets the connectivity manager and current network type.
             conMgr = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+            readTimeoutMillis = BootConfig.getBootConfig(app).getUrlLoadTimeoutMillis();
         }
-
     }
 
     /**
@@ -105,7 +108,7 @@ public class HttpAccess {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectionSpecs(Collections.singletonList(connectionSpec))
                 .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
+                .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
                 .addNetworkInterceptor(new UserAgentInterceptor());
         return builder;
     }

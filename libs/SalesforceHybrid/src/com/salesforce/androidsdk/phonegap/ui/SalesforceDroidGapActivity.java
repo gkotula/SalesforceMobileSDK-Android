@@ -121,6 +121,7 @@ public class SalesforceDroidGapActivity extends CordovaActivity implements Sales
     protected CordovaWebViewEngine makeWebViewEngine() {
         final String className = SalesforceWebViewEngine.class.getCanonicalName();
         preferences.set("webview", className);
+        preferences.set("LoadUrlTimeoutValue", bootconfig.getUrlLoadTimeoutMillis());
         return CordovaWebViewImpl.createEngine(this, preferences);
     }
 

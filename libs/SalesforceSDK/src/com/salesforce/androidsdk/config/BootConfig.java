@@ -66,6 +66,7 @@ public class BootConfig {
 	private static final String ATTEMPT_OFFLINE_LOAD = "attemptOfflineLoad";
 	private static final String PUSH_NOTIFICATION_CLIENT_ID = "androidPushNotificationClientId";
 	private static final String UNAUTHENTICATED_START_PAGE = "unauthenticatedStartPage";
+	private static final String URL_LOAD_TIMEOUT_MILLIS = "urlLoadTimeoutMillis";
 
 	// Default for optional configs.
 	private static final boolean DEFAULT_SHOULD_AUTHENTICATE = true;
@@ -83,6 +84,7 @@ public class BootConfig {
 	private boolean attemptOfflineLoad;
 	private String pushNotificationClientId;
 	private String unauthenticatedStartPage;
+	private long urlLoadTimeoutMillis = 20_000;
 
 	private static BootConfig INSTANCE = null;
 
@@ -193,6 +195,7 @@ public class BootConfig {
 			config.put(SHOULD_AUTHENTICATE, shouldAuthenticate);
 			config.put(ATTEMPT_OFFLINE_LOAD, attemptOfflineLoad);
 			config.put(UNAUTHENTICATED_START_PAGE, unauthenticatedStartPage);
+			config.put(URL_LOAD_TIMEOUT_MILLIS, urlLoadTimeoutMillis);
 
 			return config;
 		}
@@ -233,6 +236,15 @@ public class BootConfig {
 		oauthRedirectURI = res.getString(R.string.oauthRedirectURI);
 		oauthScopes = res.getStringArray(R.array.oauthScopes);
 		pushNotificationClientId = res.getString(R.string.androidPushNotificationClientId);
+
+		try {
+			final int configuredTimeout = res.getInteger(R.integer.urlLoadTimeoutMillis);
+			if (configuredTimeout > 0) {
+				urlLoadTimeoutMillis = configuredTimeout;
+			}
+		} catch (final Resources.NotFoundException ex) {
+			SalesforceSDKLogger.i(TAG, "No value found for URL loading timeout. Defaulting to " + urlLoadTimeoutMillis + "ms");
+		}
 	}
 
 	/**
@@ -259,6 +271,12 @@ public class BootConfig {
 			shouldAuthenticate = config.optBoolean(SHOULD_AUTHENTICATE, DEFAULT_SHOULD_AUTHENTICATE);
 			attemptOfflineLoad = config.optBoolean(ATTEMPT_OFFLINE_LOAD, DEFAULT_ATTEMPT_OFFLINE_LOAD);
 			unauthenticatedStartPage = config.optString(UNAUTHENTICATED_START_PAGE);
+			final long configUrlTimeout = config.optLong(URL_LOAD_TIMEOUT_MILLIS);
+			if (configUrlTimeout > 0L) {
+				urlLoadTimeoutMillis = configUrlTimeout;
+			} else {
+				SalesforceSDKLogger.i(TAG, "No value found for URL loading timeout. Defaulting to " + urlLoadTimeoutMillis + "ms");
+			}
 		} catch (JSONException e) {
 			throw new BootConfigException("Failed to parse " + HYBRID_BOOTCONFIG_PATH, e);
 		}
@@ -361,6 +379,15 @@ public class BootConfig {
 	@Deprecated
 	public String getPushNotificationClientId() {
 		return pushNotificationClientId;
+	}
+
+	/**
+	 * Returns the configured value for network request timeouts in units of milliseconds.
+	 *
+	 * @return Network request timeout value in milliseconds.
+	 */
+	public long getUrlLoadTimeoutMillis() {
+		return urlLoadTimeoutMillis;
 	}
 
 	/**
